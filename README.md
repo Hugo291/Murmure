@@ -21,7 +21,7 @@ It's the privacy-respecting, free, open-source take on tools like Wispr Flow or 
 
 ## Why Murmure
 
-- **Truly private** — speech recognition ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) and AI cleanup ([Ollama](https://ollama.com)) run entirely on your Mac. Nothing ever leaves the machine.
+- **Truly private** — speech recognition ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) and AI cleanup ([LM Studio](https://lmstudio.ai) / [Ollama](https://ollama.com)) run entirely on your Mac. Nothing ever leaves the machine.
 - **Clean text, not a transcript** — a local LLM removes "um", "uh", stutters and repetitions, fixes punctuation and casing, while keeping *your* words and style.
 - **Pastes anywhere** — native fields, Electron apps, and web inputs (Chrome included).
 - **Live feedback** — a Spotlight-style bar shows a real-time audio spectrum while you speak, then a thinking indicator while it processes.
@@ -74,8 +74,9 @@ Press **Fn**, talk, press **Fn** again. The text lands at your cursor. That's it
 ```
 
 Everything runs locally. The speech model (`large-v3-turbo`, ~1.5 GB) lives in
-`~/Library/Application Support/Murmure/`. AI cleanup uses Ollama
-(`gemma3:4b` by default; LM Studio / MLX is also supported and faster).
+`~/Library/Application Support/Murmure/`. AI cleanup prefers **LM Studio** (MLX models —
+the best option on Apple Silicon) and falls back to **Ollama** automatically if LM Studio
+isn't running, so cleanup always works.
 
 Tune all of this from **Settings**:
 - **AI touch-up** — raw text, light cleanup (default), or full rewrite.

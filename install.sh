@@ -36,11 +36,15 @@ fi
 for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
 ok "Homebrew ready"
 
-# 3. Dependencies: whisper.cpp (speech → text) + ollama (local AI cleanup)
-say "Installing dependencies (whisper-cpp, ollama)…"
-brew list whisper-cpp >/dev/null 2>&1 || brew install whisper-cpp
-brew list ollama      >/dev/null 2>&1 || brew install ollama
-ok "whisper-cpp + ollama installed"
+# 3. Dependencies:
+#    - whisper.cpp  → speech to text
+#    - LM Studio    → primary AI cleanup engine (MLX models, best on Apple Silicon)
+#    - ollama       → zero-config fallback so cleanup works out of the box
+say "Installing dependencies (whisper-cpp, LM Studio, ollama)…"
+brew list whisper-cpp        >/dev/null 2>&1 || brew install whisper-cpp
+brew list --cask lm-studio   >/dev/null 2>&1 || brew install --cask lm-studio
+brew list ollama             >/dev/null 2>&1 || brew install ollama
+ok "whisper-cpp + LM Studio + ollama installed"
 
 # 4. Source: build from this clone if possible, otherwise fetch a fresh copy
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
@@ -70,13 +74,26 @@ say "Building Murmure…"
 bash "$SRC/build.sh" "$DEST" >/dev/null
 ok "Installed to $DEST/Murmure.app"
 
-# 7. Local AI cleanup model — pulled in the BACKGROUND so it never blocks you.
-#    Dictation works immediately; cleanup switches on once the model finishes downloading.
-say "Setting up the local AI model in the background ($LLM_MODEL)…"
+# 7a. LM Studio — primary engine. Best-effort: start its local server so Murmure
+#     reaches it at :1234. You pick an MLX model inside the LM Studio app (its GUI).
+LMS="$HOME/.lmstudio/bin/lms"
+[ -x "$LMS" ] || LMS="$(command -v lms 2>/dev/null || true)"
+if [ -n "${LMS:-}" ] && [ -x "$LMS" ]; then
+  "$LMS" bootstrap   >/dev/null 2>&1 || true
+  "$LMS" server start >/dev/null 2>&1 || true
+  ok "LM Studio server started"
+else
+  warn "Open the LM Studio app once to finish its setup (then it's automatic)"
+fi
+
+# 7b. Ollama fallback model — pulled in the BACKGROUND so it never blocks you.
+#     Cleanup works immediately via Ollama; it upgrades to LM Studio's MLX models
+#     automatically once you load one in LM Studio.
+say "Setting up the fallback AI model in the background ($LLM_MODEL)…"
 brew services start ollama >/dev/null 2>&1 || (ollama serve >/dev/null 2>&1 &)
 ( ollama pull "$LLM_MODEL" >/dev/null 2>&1 && \
   osascript -e 'display notification "AI cleanup is ready." with title "Murmure"' >/dev/null 2>&1 ) &
-ok "AI model downloading in the background"
+ok "Fallback AI model downloading in the background"
 
 # 8. Launch
 say "Launching Murmure…"
@@ -91,5 +108,10 @@ cat <<'DONE'
     • Input Monitoring   (to read the Fn key)
     • Accessibility      (to paste at the cursor)
   Then press Fn, speak, press Fn again. Done.
+
+  Best quality: open LM Studio, download an MLX
+  model (a Gemma or Qwen "-mlx"), and Murmure will
+  use it automatically. Pick it in Settings › AI
+  engine. (Ollama covers cleanup until then.)
   ────────────────────────────────────────────────
 DONE

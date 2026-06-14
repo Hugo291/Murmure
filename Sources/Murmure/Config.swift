@@ -30,9 +30,10 @@ enum Config {
         set { d.set(newValue, forKey: "ollamaModel") }
     }
 
-    /// Moteur de reformulation : "ollama" (par défaut, installé par install.sh) ou "lmstudio" (MLX, rapide).
+    /// Moteur de reformulation : "lmstudio" (par défaut — MLX, bien meilleur sur Apple Silicon ;
+    /// repli auto sur Ollama s'il est éteint) ou "ollama".
     static var reformBackend: String {
-        get { d.string(forKey: "reformBackend") ?? "ollama" }
+        get { d.string(forKey: "reformBackend") ?? "lmstudio" }
         set { d.set(newValue, forKey: "reformBackend") }
     }
 
