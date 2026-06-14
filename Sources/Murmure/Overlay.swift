@@ -8,7 +8,12 @@ final class OverlayController {
     private let container = NSView()
     private var cards: [(key: ObjectIdentifier, card: ToastCard)] = [] // index 0 = plus récent (haut)
     private static let maxVisible = 3
-    private static let size = NSSize(width: 360, height: 140)
+    private static let size = NSSize(width: 380, height: 210)
+
+    // Bande d'aperçu de transcription EN TEMPS RÉEL, affichée AU-DESSUS des toasts pendant qu'on parle.
+    private let liveEffect = NSVisualEffectView()
+    private let liveText = NSTextField(labelWithString: "")
+    private var cardsTopY: CGFloat = 0 // hauteur de la pile de cartes (repère du bas de la bande live)
 
     init() {
         panel = NSPanel(contentRect: NSRect(origin: .zero, size: OverlayController.size),
@@ -25,6 +30,76 @@ final class OverlayController {
         container.frame = NSRect(origin: .zero, size: OverlayController.size)
         container.wantsLayer = true
         panel.contentView = container
+
+        // Bande live (même matériau clair que les toasts, texte sombre, max 3 lignes, tronquée en tête).
+        liveEffect.material = .popover
+        liveEffect.blendingMode = .behindWindow
+        liveEffect.state = .active
+        liveEffect.wantsLayer = true
+        liveEffect.layer?.cornerRadius = 13
+        liveEffect.layer?.masksToBounds = true
+        liveEffect.layer?.borderWidth = 0.5
+        liveEffect.layer?.borderColor = NSColor(white: 0, alpha: 0.06).cgColor
+        liveEffect.isHidden = true
+        container.addSubview(liveEffect)
+
+        liveText.font = .systemFont(ofSize: 13)
+        liveText.textColor = .labelColor
+        liveText.alignment = .center
+        liveText.maximumNumberOfLines = 3
+        liveText.lineBreakMode = .byTruncatingHead
+        liveText.cell?.wraps = true
+        liveText.cell?.isScrollable = false
+        liveText.isBordered = false
+        liveText.drawsBackground = false
+        liveEffect.addSubview(liveText)
+    }
+
+    // MARK: - Aperçu temps réel
+
+    /// Met à jour la bande d'aperçu (texte partiel de la reconnaissance on-device). Vide → masque.
+    func setLive(_ text: String) {
+        let t = liveTail(text)
+        guard !t.isEmpty else { hideLive(); return }
+        liveText.stringValue = t
+        if liveEffect.isHidden { liveEffect.alphaValue = 0; liveEffect.isHidden = false }
+        layoutLive()
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.15; liveEffect.animator().alphaValue = 1 }
+    }
+
+    /// Masque l'aperçu (fin de dictée / annulation).
+    func hideLive() {
+        guard !liveEffect.isHidden else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; self.liveEffect.animator().alphaValue = 0 },
+            completionHandler: { [weak self] in
+                guard let self, self.liveEffect.alphaValue == 0 else { return } // un setLive a pu re-montrer la bande
+                self.liveEffect.isHidden = true; self.liveText.stringValue = ""
+            })
+    }
+
+    /// Garde la fin du texte (les derniers mots), pour ne pas déborder.
+    private func liveTail(_ s: String) -> String {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 170 else { return trimmed }
+        let cut = String(trimmed.suffix(170))
+        if let sp = cut.firstIndex(of: " ") { return "…" + cut[cut.index(after: sp)...] }
+        return "…" + cut
+    }
+
+    private func layoutLive() {
+        guard !liveEffect.isHidden else { return }
+        let w = OverlayController.size.width
+        let boxW = min(CGFloat(360), w - 16)
+        let inset: CGFloat = 12
+        liveText.preferredMaxLayoutWidth = boxW - inset * 2
+        let fit = liveText.sizeThatFits(NSSize(width: boxW - inset * 2, height: 120))
+        let y = cardsTopY + 10
+        // Ne jamais dépasser le haut du panel (cas rare : 3 cartes empilées + aperçu long).
+        let maxH = OverlayController.size.height - y - 6
+        let boxH = max(28, min(min(78, maxH), fit.height + 14))
+        liveEffect.frame = NSRect(x: (w - boxW) / 2, y: y, width: boxW, height: boxH)
+        liveText.frame = NSRect(x: inset, y: 7, width: boxW - inset * 2, height: boxH - 14)
     }
 
     // MARK: - API (par job)
@@ -50,7 +125,10 @@ final class OverlayController {
         NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; card.animator().alphaValue = 0 },
                                              completionHandler: { card.removeFromSuperview() })
         relayout()
-        if cards.isEmpty { panel.orderOut(nil) }
+        if cards.isEmpty {
+            liveEffect.isHidden = true; liveText.stringValue = ""
+            panel.orderOut(nil)
+        }
     }
 
     // MARK: - Interne
@@ -91,6 +169,8 @@ final class OverlayController {
         var y: CGFloat = 0
         for i in 0..<visible { y += OverlayController.cardSize(i).height }
         y += CGFloat(max(0, visible - 1)) * 6
+        cardsTopY = y // sommet de la pile = bas de la bande d'aperçu
+        layoutLive()
         for (i, item) in cards.enumerated() {
             let card = item.card
             guard i < OverlayController.maxVisible else {

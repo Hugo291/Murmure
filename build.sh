@@ -34,6 +34,8 @@ cat > "$APPDIR/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>                 <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Murmure enregistre votre voix pour la transcrire localement.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Murmure affiche un aperçu de votre dictée en temps réel, reconnu sur l'appareil (aucune donnée envoyée).</string>
     <key>NSHighResolutionCapable</key>     <true/>
 </dict>
 </plist>

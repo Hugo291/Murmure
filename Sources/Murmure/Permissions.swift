@@ -1,5 +1,6 @@
 import AppKit
 import IOKit.hid
+import Speech
 
 /// Helpers pour vérifier/demander les autorisations système et ouvrir les bons réglages.
 enum Permissions {
@@ -34,6 +35,15 @@ enum Permissions {
 
     static func openMicrophoneSettings() {
         open("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+    }
+
+    /// Reconnaissance vocale : pour l'aperçu de transcription en temps réel (on-device).
+    static var speechGranted: Bool {
+        SFSpeechRecognizer.authorizationStatus() == .authorized
+    }
+
+    static func openSpeechSettings() {
+        open("x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")
     }
 
     private static func open(_ urlString: String) {

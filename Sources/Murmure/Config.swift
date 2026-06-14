@@ -73,6 +73,12 @@ enum Config {
         set { d.set(newValue, forKey: "noiseReduction") }
     }
 
+    /// Aperçu de transcription EN TEMPS RÉEL (reconnaissance vocale on-device d'Apple, au-dessus du toast).
+    static var liveTranscript: Bool {
+        get { d.object(forKey: "liveTranscript") == nil ? true : d.bool(forKey: "liveTranscript") }
+        set { d.set(newValue, forKey: "liveTranscript") }
+    }
+
     // MARK: - Emplacements
 
     /// ~/Library/Application Support/Murmure/

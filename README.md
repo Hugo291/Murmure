@@ -25,6 +25,7 @@ It's the privacy-respecting, free, open-source take on tools like Wispr Flow or 
 - **Clean text, not a transcript** — a local LLM removes "um", "uh", stutters and repetitions, fixes punctuation and casing, while keeping *your* words and style.
 - **Pastes anywhere** — native fields, Electron apps, and web inputs (Chrome included).
 - **Live feedback** — a Spotlight-style bar shows a real-time audio spectrum while you speak, then a thinking indicator while it processes.
+- **Live preview** — your words appear in real time above the overlay as you talk (Apple's on-device speech), then vanish; the final pasted text still comes from whisper.
 - **Learns your vocabulary** — correct a transcript and Murmure remembers the term, then reuses it to transcribe better next time.
 - **Editable shortcuts** — rebind every command from the menu, with conflict warnings.
 - **Parallel dictations** — fire several at once; they're delivered in the order you started them, so your text never gets scrambled.
@@ -49,6 +50,7 @@ Murmure lives in the menu bar (the 🎙 mic, top-right). On first run, grant thr
 |---|---|
 | **Microphone** | to hear you |
 | **Input Monitoring** | to detect the Fn key globally |
+| **Speech Recognition** | optional — for the real-time live preview (on-device) |
 | **Accessibility** | to paste text at the cursor |
 
 > **Tip:** in System Settings › Keyboard, set *"Press 🌐/Fn key to"* → *"Do Nothing"* so Fn is free for dictation.
@@ -87,7 +89,7 @@ Tune all of this from **Settings**:
 
 ## Privacy
 
-Murmure makes **zero network requests** for its core function. Audio, transcripts and your learned vocabulary stay in `~/Library/Application Support/Murmure/` on your Mac. The only downloads are the one-time model files (from Hugging Face / Ollama) during install.
+Murmure makes **zero network requests** for its core function. Audio, transcripts and your learned vocabulary stay in `~/Library/Application Support/Murmure/` on your Mac. The real-time live preview uses Apple's speech recognition with `requiresOnDeviceRecognition = true`, so it stays on-device too. The only downloads are the one-time model files (from Hugging Face / Ollama) during install.
 
 ## Build from source
 

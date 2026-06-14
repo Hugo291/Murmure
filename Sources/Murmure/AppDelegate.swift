@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
     private let hotkey = FnHotkey()
     private let overlay = OverlayController()
+    private let liveTranscriber = LiveTranscriber()
     private let editWatcher = EditWatcher()
     private let vocabToast = VocabToast()
     private var historyWindow: HistoryWindowController?
@@ -44,8 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AudioRecorder.requestPermission { _ in }
         Permissions.promptAccessibility()
         Permissions.promptInputMonitoring()
+        LiveTranscriber.requestAuthorization() // reconnaissance vocale on-device (aperçu temps réel)
 
         recorder.onLevels = { [weak self] levels in self?.overlay.updateLevels(levels) }
+        recorder.onBuffer = { [weak self] buf in self?.liveTranscriber.append(buf) }
+        liveTranscriber.onText = { [weak self] text in self?.overlay.setLive(text) }
         editWatcher.onCorrection = { [weak self] inserted, corrected, id in
             let learned = CorrectionStore.shared.applyCorrection(id: id, inserted: inserted, corrected: corrected)
             guard !learned.isEmpty else { return }
@@ -232,6 +236,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mute.state = Config.muteWhileRecording ? .on : .off
         settings.addItem(mute)
 
+        let live = NSMenuItem(title: L.tr("Live transcript preview", "Aperçu de transcription en direct"), action: #selector(toggleLive), keyEquivalent: "")
+        live.target = self
+        live.state = Config.liveTranscript ? .on : .off
+        settings.addItem(live)
+
         settings.addItem(.separator())
 
         // Autorisations
@@ -239,6 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addItem(permMenu, L.tr("Accessibility (paste)", "Accessibilité (coller)") + "  \(mark(Permissions.accessibilityGranted))", #selector(openAccessibility))
         addItem(permMenu, L.tr("Input Monitoring (Fn key)", "Surveillance des saisies (Fn)") + "  \(mark(Permissions.inputMonitoringGranted))", #selector(openInputMonitoring))
         addItem(permMenu, L.tr("Microphone…", "Microphone…"), #selector(openMic))
+        addItem(permMenu, L.tr("Speech Recognition (live preview)", "Reconnaissance vocale (aperçu)") + "  \(mark(Permissions.speechGranted))", #selector(openSpeech))
         let permRoot = NSMenuItem(title: L.tr("Permissions", "Autorisations"), action: nil, keyEquivalent: "")
         permRoot.submenu = permMenu
         settings.addItem(permRoot)
@@ -353,6 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ensureTracking()
         play("Tink")
         overlay.showRecording(job)
+        if Config.liveTranscript { liveTranscriber.start(localeID: speechLocaleID()) } // aperçu temps réel
 
         let pos = markerAnchor(for: job)
         job.anchor = pos
@@ -409,9 +420,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopRecording(_ job: DictationJob) {
         SystemAudio.shared.restore()
+        let wav = recorder.stop()   // retire le tap d'ABORD → plus aucun buffer vers l'aperçu
+        liveTranscriber.stop()      // puis on arrête le moteur d'aperçu (fenêtre de course fermée)
+        overlay.hideLive()          // la bande disparaît à la fin du transcript
         recordingJob = nil
 
-        guard let wav = recorder.stop() else { // trop court → on jette ce job
+        guard let wav else { // trop court → on jette ce job
             overlay.remove(job)
             job.marker.hide()
             removeJob(job)
@@ -547,6 +561,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if job === recordingJob {
             recorder.cancel()
             SystemAudio.shared.restore()
+            liveTranscriber.stop()
+            overlay.hideLive()
             recordingJob = nil
         } else {
             job.token.cancel()
@@ -673,9 +689,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleMute() { Config.muteWhileRecording.toggle(); rebuildMenu() }
 
+    @objc private func toggleLive() {
+        Config.liveTranscript.toggle()
+        if !Config.liveTranscript { liveTranscriber.stop(); overlay.hideLive() }
+        rebuildMenu()
+    }
+
+    /// Locale pour la reconnaissance vocale on-device (suit la langue de dictée).
+    private func speechLocaleID() -> String {
+        switch Config.language {
+        case "fr": return "fr-FR"
+        case "en": return "en-US"
+        default:   return Locale.current.identifier
+        }
+    }
+
     @objc private func openAccessibility() { Permissions.openAccessibilitySettings() }
     @objc private func openInputMonitoring() { Permissions.openInputMonitoringSettings() }
     @objc private func openMic() { Permissions.openMicrophoneSettings() }
+    @objc private func openSpeech() { Permissions.openSpeechSettings() }
 
     @objc private func openHistory() {
         if historyWindow == nil { historyWindow = HistoryWindowController() }

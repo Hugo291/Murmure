@@ -14,6 +14,8 @@ final class AudioRecorder: NSObject {
 
     /// Spectre normalisé (0…1), publié sur la file principale.
     var onLevels: (([Float]) -> Void)?
+    /// Buffer micro brut (sur le thread audio temps réel) — pour l'aperçu temps réel.
+    var onBuffer: ((AVAudioPCMBuffer) -> Void)?
     let bandCount = 28
 
     static func requestPermission(_ done: @escaping (Bool) -> Void) {
@@ -51,6 +53,7 @@ final class AudioRecorder: NSObject {
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self else { return }
             try? self.rawFile?.write(from: buffer)
+            self.onBuffer?(buffer)
             self.analyze(buffer)
         }
 
