@@ -82,8 +82,8 @@ isn't running, so cleanup always works.
 
 Tune all of this from **Settings**:
 - **AI touch-up** — raw text, light cleanup (default), or full rewrite.
-- **AI engine** — pick any model already installed in Ollama or LM Studio (the menu lists them live; nothing is downloaded). *Test current model* benchmarks its response time.
-- **Transcription model** — choose among the whisper models installed in `~/Library/Application Support/Murmure/`.
+- **AI engine** — pick any model already installed in Ollama or LM Studio (the menu lists them live). If you have none, *Download a model…* fetches Gemma in one click — for Ollama (`ollama pull`) or LM Studio (MLX). *Test current model* benchmarks its response time.
+- **Transcription model** — choose among the whisper models you have, or *Download a model…* to grab another size (tiny → large-v3) from Hugging Face in one click, with a live progress bar.
 - **Dictation language** — French, English, or auto.
 - **Language** — interface language (English by default, French available).
 

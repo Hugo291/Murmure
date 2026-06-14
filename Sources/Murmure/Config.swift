@@ -115,13 +115,56 @@ enum Config {
 
     /// Cherche le binaire whisper-cli là où Homebrew/whisper.cpp l'installe.
     static func whisperBinary() -> String? {
-        let candidates = [
+        firstExecutable([
             "/opt/homebrew/bin/whisper-cli",
             "/opt/homebrew/bin/whisper-cpp",
             "/usr/local/bin/whisper-cli",
             "/usr/local/bin/whisper-cpp",
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        ])
+    }
+
+    /// Binaire `ollama` (Homebrew ou installeur officiel).
+    static func ollamaBinary() -> String? {
+        firstExecutable(["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"])
+    }
+
+    /// Binaire `lms` (CLI de LM Studio, installé sous ~/.lmstudio/bin).
+    static func lmsBinary() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return firstExecutable([
+            "\(home)/.lmstudio/bin/lms",
+            "\(home)/.cache/lm-studio/bin/lms",
+            "/opt/homebrew/bin/lms",
+            "/usr/local/bin/lms",
+        ])
+    }
+
+    private static func firstExecutable(_ paths: [String]) -> String? {
+        paths.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    // MARK: - Catalogue de modèles recommandés (téléchargeables en un clic)
+
+    /// Un modèle whisper.cpp recommandé (téléchargé depuis Hugging Face à la demande).
+    struct WhisperCatalogItem: Equatable {
+        let name: String   // libellé court, ex. "small"
+        let file: String   // fichier ggml, ex. "ggml-small.bin"
+        let size: String   // taille approx. affichée, ex. "487 MB"
+    }
+
+    /// Modèles whisper proposés au téléchargement (du plus léger au plus précis).
+    static let whisperCatalog: [WhisperCatalogItem] = [
+        .init(name: "tiny",           file: "ggml-tiny.bin",           size: "77 MB"),
+        .init(name: "base",           file: "ggml-base.bin",           size: "147 MB"),
+        .init(name: "small",          file: "ggml-small.bin",          size: "487 MB"),
+        .init(name: "medium",         file: "ggml-medium.bin",         size: "1.5 GB"),
+        .init(name: "large-v3-turbo", file: "ggml-large-v3-turbo.bin", size: "1.6 GB"),
+        .init(name: "large-v3",       file: "ggml-large-v3.bin",       size: "3.1 GB"),
+    ]
+
+    /// URL de téléchargement Hugging Face pour un fichier ggml whisper.cpp.
+    static func whisperURL(_ file: String) -> String {
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(file)"
     }
 
     static let ollamaURL = URL(string: "http://localhost:11434/api/generate")!

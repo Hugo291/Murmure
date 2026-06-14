@@ -174,6 +174,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engineMenu.addItem(testItem)
         addItem(engineMenu, L.tr("Refresh list", "Rafraîchir la liste"), #selector(refreshModelsAction))
 
+        // Aucun modèle de reformulation pour un moteur → proposer Gemma en un clic (Ollama + LM Studio).
+        let hasOllamaGemma = ollamaModelList.contains { $0.lowercased().contains("gemma") }
+        let hasLMSGemma = lmStudioModelList.contains { $0.lowercased().contains("gemma") }
+        let offerOllama = Config.ollamaBinary() != nil && !hasOllamaGemma
+        let offerLMS = Config.lmsBinary() != nil && !hasLMSGemma
+        if offerOllama || offerLMS {
+            engineMenu.addItem(.separator())
+            let dlMenu = NSMenu()
+            if offerOllama {
+                let busy = ModelDownloader.shared.isDownloading("ollama:gemma3:4b")
+                let it = NSMenuItem(title: "Gemma 3 4B   (Ollama, 3.3 GB)" + (busy ? "   …" : ""),
+                                    action: busy ? nil : #selector(downloadChat(_:)), keyEquivalent: "")
+                it.target = self; it.representedObject = "ollama"; it.isEnabled = !busy
+                dlMenu.addItem(it)
+            }
+            if offerLMS {
+                let busy = ModelDownloader.shared.isDownloading("lmstudio:gemma")
+                let it = NSMenuItem(title: "Gemma 3 4B   (LM Studio, MLX)" + (busy ? "   …" : ""),
+                                    action: busy ? nil : #selector(downloadChat(_:)), keyEquivalent: "")
+                it.target = self; it.representedObject = "lmstudio"; it.isEnabled = !busy
+                dlMenu.addItem(it)
+            }
+            let dlRoot = NSMenuItem(title: L.tr("Download a model…", "Télécharger un modèle…"), action: nil, keyEquivalent: "")
+            dlRoot.submenu = dlMenu
+            engineMenu.addItem(dlRoot)
+        }
+
         let modelRoot = NSMenuItem(title: L.tr("AI engine", "Moteur IA"), action: nil, keyEquivalent: "")
         modelRoot.submenu = engineMenu
         settings.addItem(modelRoot)
@@ -194,6 +221,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 whisperMenu.addItem(it)
             }
         }
+        // Modèles whisper recommandés NON installés → téléchargement en un clic.
+        let whisperToGet = Config.whisperCatalog.filter { !whisperInstalled.contains($0.file) }
+        if !whisperToGet.isEmpty {
+            whisperMenu.addItem(.separator())
+            let dlMenu = NSMenu()
+            for item in whisperToGet {
+                let busy = ModelDownloader.shared.isDownloading("whisper:" + item.file)
+                let it = NSMenuItem(title: "\(item.name)   (\(item.size))" + (busy ? "   …" : ""),
+                                    action: busy ? nil : #selector(downloadWhisper(_:)), keyEquivalent: "")
+                it.target = self
+                it.representedObject = item.file
+                it.isEnabled = !busy
+                dlMenu.addItem(it)
+            }
+            let dlRoot = NSMenuItem(title: L.tr("Download a model…", "Télécharger un modèle…"), action: nil, keyEquivalent: "")
+            dlRoot.submenu = dlMenu
+            whisperMenu.addItem(dlRoot)
+        }
+
         let whisperRoot = NSMenuItem(title: L.tr("Transcription model", "Modèle de transcription"), action: nil, keyEquivalent: "")
         whisperRoot.submenu = whisperMenu
         settings.addItem(whisperRoot)
@@ -670,6 +716,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func setWhisperModel(_ sender: NSMenuItem) {
         if let f = sender.representedObject as? String { Config.whisperModel = f; rebuildMenu() }
+    }
+
+    /// Télécharge un modèle de transcription whisper (Hugging Face) puis l'active automatiquement.
+    @objc private func downloadWhisper(_ sender: NSMenuItem) {
+        guard let file = sender.representedObject as? String,
+              let item = Config.whisperCatalog.first(where: { $0.file == file }) else { return }
+        let token = NSObject()
+        let dl = L.tr("Downloading", "Téléchargement de")
+        overlay.progressNote(token, "\(dl) \(item.name)…")
+        ModelDownloader.shared.downloadWhisper(
+            file: file, url: Config.whisperURL(file), label: item.name,
+            progress: { [weak self] frac, name in
+                let pct = frac.map { " \(Int(($0 * 100).rounded()))%" } ?? "…"
+                self?.overlay.progressNote(token, "\(dl) \(name)\(pct)")
+            },
+            done: { [weak self] ok in
+                guard let self else { return }
+                if ok {
+                    Config.whisperModel = file
+                    self.overlay.notice(token, "\(item.name) " + L.tr("ready", "prêt"), duration: 1.8)
+                } else {
+                    self.overlay.notice(token, "⚠︎ " + L.tr("Download failed", "Échec du téléchargement"), duration: 2.2)
+                }
+                self.rebuildMenu()
+            })
+        rebuildMenu()   // reflète l'état « … » et désactive l'item
+    }
+
+    /// Télécharge un modèle de reformulation (Gemma) pour Ollama ou LM Studio, puis le sélectionne.
+    @objc private func downloadChat(_ sender: NSMenuItem) {
+        guard let backend = sender.representedObject as? String else { return }
+        let token = NSObject()
+        let name = backend == "ollama" ? "Gemma (Ollama)" : "Gemma (LM Studio)"
+        let dl = L.tr("Downloading", "Téléchargement de")
+        overlay.progressNote(token, "\(dl) \(name)…")
+        let progress: (Double?, String) -> Void = { [weak self] frac, _ in
+            let pct = frac.map { " \(Int(($0 * 100).rounded()))%" } ?? "…"
+            self?.overlay.progressNote(token, "\(dl) \(name)\(pct)")
+        }
+        let done: (Bool) -> Void = { [weak self] ok in
+            guard let self else { return }
+            if ok { self.selectDownloadedChat(backend: backend, token: token, name: name) }
+            else {
+                self.overlay.notice(token, "⚠︎ " + L.tr("Download failed", "Échec du téléchargement"), duration: 2.2)
+                self.rebuildMenu()
+            }
+        }
+        if backend == "ollama" {
+            ModelDownloader.shared.downloadOllama(model: "gemma3:4b", progress: progress, done: done)
+        } else {
+            ModelDownloader.shared.downloadLMStudio(search: "gemma", progress: progress, done: done)
+        }
+        rebuildMenu()
+    }
+
+    /// Après téléchargement d'un modèle de chat : re-scanne et sélectionne le Gemma fraîchement installé.
+    private func selectDownloadedChat(backend: String, token: AnyObject, name: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let oll = Reformulator.ollamaModels()
+            let lms = Reformulator.lmStudioModels()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.ollamaModelList = oll
+                self.lmStudioModelList = lms
+                if backend == "ollama", let g = oll.first(where: { $0.lowercased().contains("gemma") }) {
+                    Config.reformBackend = "ollama"; Config.ollamaModel = g
+                } else if backend == "lmstudio", let g = lms.first(where: { $0.lowercased().contains("gemma") }) {
+                    Config.reformBackend = "lmstudio"; Config.lmstudioModel = g
+                }
+                self.overlay.notice(token, "\(name) " + L.tr("ready", "prêt"), duration: 1.8)
+                self.rebuildMenu()
+            }
+        }
     }
 
     @objc private func setLang(_ sender: NSMenuItem) {

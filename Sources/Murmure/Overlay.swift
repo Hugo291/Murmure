@@ -11,7 +11,7 @@ final class OverlayController {
     private static let size = NSSize(width: 380, height: 210)
 
     // Bande d'aperçu de transcription EN TEMPS RÉEL, affichée AU-DESSUS des toasts pendant qu'on parle.
-    private let liveEffect = NSVisualEffectView()
+    private let liveBand = NSView()   // conteneur TRANSPARENT de l'aperçu (aucun fond, juste le texte)
     private let liveText = NSTextField(labelWithString: "")
     private var cardsTopY: CGFloat = 0 // hauteur de la pile de cartes (repère du bas de la bande live)
 
@@ -31,19 +31,12 @@ final class OverlayController {
         container.wantsLayer = true
         panel.contentView = container
 
-        // Bande live (même matériau clair que les toasts, texte sombre, max 3 lignes, tronquée en tête).
-        liveEffect.material = .popover
-        liveEffect.blendingMode = .behindWindow
-        liveEffect.state = .active
-        liveEffect.wantsLayer = true
-        liveEffect.layer?.cornerRadius = 13
-        liveEffect.layer?.masksToBounds = true
-        liveEffect.layer?.borderWidth = 0.5
-        liveEffect.layer?.borderColor = NSColor(white: 0, alpha: 0.06).cgColor
-        liveEffect.isHidden = true
-        container.addSubview(liveEffect)
+        // Bande d'aperçu : conteneur SANS fond (transparent). Seul le texte est visible.
+        liveBand.wantsLayer = true
+        liveBand.isHidden = true
+        container.addSubview(liveBand)
 
-        liveText.font = .systemFont(ofSize: 13)
+        liveText.font = .systemFont(ofSize: 13, weight: .medium)
         liveText.textColor = .labelColor
         liveText.alignment = .center
         liveText.maximumNumberOfLines = 3
@@ -52,7 +45,18 @@ final class OverlayController {
         liveText.cell?.isScrollable = false
         liveText.isBordered = false
         liveText.drawsBackground = false
-        liveEffect.addSubview(liveText)
+        // Sans fond, on garde la lisibilité avec une ombre/halo doux (façon sous-titres),
+        // dont la couleur suit l'apparence : halo clair en mode clair, sombre en mode sombre.
+        liveText.wantsLayer = true
+        let halo = NSShadow()
+        halo.shadowColor = NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return dark ? NSColor.black.withAlphaComponent(0.65) : NSColor.white.withAlphaComponent(0.9)
+        }
+        halo.shadowBlurRadius = 4
+        halo.shadowOffset = NSSize(width: 0, height: -1)
+        liveText.shadow = halo
+        liveBand.addSubview(liveText)
     }
 
     // MARK: - Aperçu temps réel
@@ -62,19 +66,19 @@ final class OverlayController {
         let t = liveTail(text)
         guard !t.isEmpty else { hideLive(); return }
         liveText.stringValue = t
-        if liveEffect.isHidden { liveEffect.alphaValue = 0; liveEffect.isHidden = false }
+        if liveBand.isHidden { liveBand.alphaValue = 0; liveBand.isHidden = false }
         layoutLive()
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.15; liveEffect.animator().alphaValue = 1 }
+        NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.15; liveBand.animator().alphaValue = 1 }
     }
 
     /// Masque l'aperçu (fin de dictée / annulation).
     func hideLive() {
-        guard !liveEffect.isHidden else { return }
-        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; self.liveEffect.animator().alphaValue = 0 },
+        guard !liveBand.isHidden else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; self.liveBand.animator().alphaValue = 0 },
             completionHandler: { [weak self] in
-                guard let self, self.liveEffect.alphaValue == 0 else { return } // un setLive a pu re-montrer la bande
-                self.liveEffect.isHidden = true; self.liveText.stringValue = ""
+                guard let self, self.liveBand.alphaValue == 0 else { return } // un setLive a pu re-montrer la bande
+                self.liveBand.isHidden = true; self.liveText.stringValue = ""
             })
     }
 
@@ -88,7 +92,7 @@ final class OverlayController {
     }
 
     private func layoutLive() {
-        guard !liveEffect.isHidden else { return }
+        guard !liveBand.isHidden else { return }
         let w = OverlayController.size.width
         let boxW = min(CGFloat(360), w - 16)
         let inset: CGFloat = 12
@@ -98,7 +102,7 @@ final class OverlayController {
         // Ne jamais dépasser le haut du panel (cas rare : 3 cartes empilées + aperçu long).
         let maxH = OverlayController.size.height - y - 6
         let boxH = max(28, min(min(78, maxH), fit.height + 14))
-        liveEffect.frame = NSRect(x: (w - boxW) / 2, y: y, width: boxW, height: boxH)
+        liveBand.frame = NSRect(x: (w - boxW) / 2, y: y, width: boxW, height: boxH)
         liveText.frame = NSRect(x: inset, y: 7, width: boxW - inset * 2, height: boxH - 14)
     }
 
@@ -108,6 +112,14 @@ final class OverlayController {
     func showProcessing(_ owner: AnyObject, _ text: String = L.tr("Thinking…", "Le modèle réfléchit…")) { show(owner, .processing(text)) }
 
     func updateLevels(_ levels: [Float]) { cards.first?.card.setLevels(levels) } // seule la carte du haut enregistre
+
+    /// Carte de PROGRESSION persistante (téléchargement de modèle) : texte mis à jour,
+    /// SANS auto-retrait. Conclure avec `notice(owner, …)` (qui programme le retrait) ou `remove(owner)`.
+    func progressNote(_ owner: AnyObject, _ text: String) {
+        let key = ObjectIdentifier(owner)
+        if cardFor(key) == nil { show(owner, .notice(text)) }
+        else { cardFor(key)?.setMode(.notice(text)); relayout() }
+    }
 
     /// Message bref (Collé / Copié / Annulé / erreur) sur la carte du job, puis on la retire.
     func notice(_ owner: AnyObject, _ text: String, duration: TimeInterval = 1.2) {
@@ -126,7 +138,7 @@ final class OverlayController {
                                              completionHandler: { card.removeFromSuperview() })
         relayout()
         if cards.isEmpty {
-            liveEffect.isHidden = true; liveText.stringValue = ""
+            liveBand.isHidden = true; liveText.stringValue = ""
             panel.orderOut(nil)
         }
     }

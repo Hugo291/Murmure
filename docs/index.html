@@ -50,25 +50,46 @@
   #mur .line{font-size:15px;line-height:1.5;color:#1d1d1f;min-height:44px}
   #mur .caret{display:inline-block;width:2px;height:17px;background:var(--accent);vertical-align:-3px;animation:bl 1s steps(1) infinite}
   @keyframes bl{50%{opacity:0}}
-  #mur .marker{display:none;width:19px;height:19px;border-radius:50%;background:var(--accent);color:#fff;vertical-align:-4px;margin-left:5px;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(10,132,255,.5)}
+
+  /* Cursor pastille — matches MicMarker: accent circle, white mic/brain glyph, white × badge, number */
+  #mur .marker{position:relative;display:none;width:21px;height:21px;border-radius:50%;background:var(--accent);vertical-align:-5px;margin-left:6px;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(10,132,255,.5)}
   #mur .marker.on{display:inline-flex}
-  #mur .subtitle{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);max-width:320px;text-align:center;font-size:13px;color:rgba(255,255,255,.7);opacity:0;transition:opacity .3s;font-style:italic}
+  #mur .marker .m-ic{display:flex;align-items:center;justify-content:center;color:#fff}
+  #mur .marker .m-ic svg{width:12px;height:12px;display:block}
+  #mur .m-x{position:absolute;top:-3px;right:-3px;width:11px;height:11px;border-radius:50%;background:#fff;color:var(--accent);font-size:10px;line-height:1;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  #mur .m-n{position:absolute;bottom:-4px;right:-4px;min-width:12px;height:12px;border-radius:6px;background:#fff;color:var(--accent);font-size:8px;line-height:12px;font-weight:700;text-align:center;padding:0 2px;display:none;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  #mur .m-n.on{display:block}
+
+  /* Live preview — transparent floating text with a soft halo (no gray pill), like the real app */
+  #mur .subtitle{position:absolute;left:50%;bottom:122px;transform:translateX(-50%);max-width:300px;text-align:center;font-size:13px;font-weight:500;color:rgba(255,255,255,.85);opacity:0;transition:opacity .3s;text-shadow:0 1px 4px rgba(0,0,0,.55)}
   #mur .subtitle.on{opacity:1}
-  #mur .overlay{position:absolute;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);opacity:0;transition:opacity .35s,transform .35s}
+
+  /* Bottom-anchored stack: newest card big on top, older ones compact below */
+  #mur .overlay{position:absolute;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);opacity:0;transition:opacity .35s,transform .35s;display:flex;flex-direction:column;align-items:center;gap:6px}
   #mur .overlay.on{opacity:1;transform:translateX(-50%) translateY(0)}
-  #mur .card{width:344px;height:52px;display:flex;align-items:center;gap:7px;padding:0 14px 0 16px;border-radius:15px;background:rgba(238,238,240,.82);backdrop-filter:blur(26px) saturate(1.3);-webkit-backdrop-filter:blur(26px) saturate(1.3);border:0.5px solid rgba(0,0,0,.06);color:#1d1d1f;box-shadow:0 10px 34px rgba(0,0,0,.20)}
+  #mur .card{width:344px;height:52px;display:flex;align-items:center;gap:7px;padding:0 14px 0 16px;border-radius:15px;background:rgba(238,238,240,.82);backdrop-filter:blur(26px) saturate(1.3);-webkit-backdrop-filter:blur(26px) saturate(1.3);border:0.5px solid rgba(0,0,0,.06);color:#1d1d1f;box-shadow:0 10px 34px rgba(0,0,0,.20);transition:width .22s,height .22s,opacity .22s}
+  #mur .card.r1{width:286px;height:38px;opacity:.9}
+  #mur .card.r2{width:238px;height:32px;opacity:.62}
   #mur .c-mic{color:var(--accent);display:none;flex:0 0 auto;animation:pulse .9s ease-in-out infinite}
+  #mur .c-mic svg{width:16px;height:16px;display:block}
   @keyframes pulse{50%{opacity:.45}}
   #mur .bars{flex:1;height:30px;display:none;align-items:center;justify-content:center;gap:3px}
   #mur .bar{width:8px;height:6px;background:var(--accent);border-radius:4px}
-  #mur .think{flex:1;display:none;flex-direction:column;gap:6px;align-items:flex-start;padding-left:2px}
-  #mur .tlabel{font-size:12.5px;color:#1d1d1f}
-  #mur .prog{width:100%;height:4px;border-radius:2px;background:rgba(0,0,0,.12);overflow:hidden}
-  #mur .progbar{height:100%;width:8%;background:var(--accent);border-radius:2px}
+  #mur .think{flex:1;display:none;flex-direction:column;gap:6px;align-items:stretch;justify-content:center}
+  #mur .tlabel{font-size:12.5px;color:#3a3a3c}
+  #mur .prog{width:100%;height:4px;border-radius:2px;background:rgba(0,0,0,.10);overflow:hidden}
+  /* Gray INDETERMINATE bar (macOS look) while the model thinks — not a blue fill */
+  #mur .progbar{height:100%;width:34%;background:rgba(60,60,67,.5);border-radius:2px;animation:indet 1.15s ease-in-out infinite}
+  @keyframes indet{0%{transform:translateX(-115%)}100%{transform:translateX(330%)}}
   #mur .notice{flex:1;display:none;align-items:center;justify-content:center;font-size:13px;color:#1d1d1f}
-  #mur .card.s-rec .c-mic,#mur .card.s-rec .bars{display:flex}
-  #mur .card.s-think .think{display:flex}
-  #mur .card.s-paste .notice{display:flex}
+  #mur .clabel{display:none;flex:1;align-items:center;justify-content:center;font-size:12px;color:#3a3a3c}
+  /* Top card (r0) shows the rich content for its state… */
+  #mur .card.r0.s-rec .c-mic,#mur .card.r0.s-rec .bars{display:flex}
+  #mur .card.r0.s-think .think{display:flex}
+  #mur .card.r0.s-paste .notice{display:flex}
+  /* …compact cards (r1/r2) just show a small state label */
+  #mur .card.r1 .clabel,#mur .card.r2 .clabel{display:flex}
+
   #mur .controls{display:flex;align-items:center;gap:12px;justify-content:center;padding-top:16px}
   #mur .controls button{font:14px/1 inherit;color:var(--ink);background:transparent;border:0.5px solid var(--line);border-radius:9px;padding:8px 16px;cursor:pointer}
   #mur .controls button:hover{border-color:rgba(255,255,255,.3)}
@@ -97,7 +118,7 @@
 
   <section aria-label="Live simulation">
     <h2>See it in action</h2>
-    <p class="sr-only">A simulation: press Fn, a spectrum bar listens, on-device AI cleans the speech, and the text is pasted at the cursor.</p>
+    <p class="sr-only">A simulation: press Fn, your words appear live above a Spotlight-style spectrum, on-device AI cleans the speech, and the text is pasted at the cursor. You can fire several dictations at once — they stack and are delivered in order.</p>
     <div id="mur">
       <div class="screen">
         <div class="menubar"><span>Notes</span><span class="mb-r"><span class="mb-mic" id="mbmic"></span><span>9:41</span></span></div>
@@ -105,18 +126,11 @@
           <div class="tb"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="tb-t">Team sync</span></div>
           <div class="doc">
             <div class="doc-h">Today</div>
-            <div class="line"><span id="typed"></span><span class="caret"></span><span class="marker" id="marker"></span></div>
+            <div class="line"><span id="typed"></span><span class="caret"></span><span class="marker" id="marker"><span class="m-ic" id="m-ic"></span><span class="m-x">×</span><span class="m-n" id="m-n"></span></span></div>
           </div>
         </div>
         <div class="subtitle" id="subtitle"></div>
-        <div class="overlay" id="overlay">
-          <div class="card" id="card">
-            <span class="c-mic" id="cmic"></span>
-            <div class="bars" id="bars"></div>
-            <div class="think"><span class="tlabel">Thinking…</span><div class="prog"><div class="progbar" id="prog"></div></div></div>
-            <div class="notice"><span>Pasted</span></div>
-          </div>
-        </div>
+        <div class="overlay" id="overlay"></div>
       </div>
       <div class="controls"><button id="replay" type="button">Replay</button><span class="step" id="step">Press Fn to dictate</span></div>
     </div>
@@ -126,11 +140,11 @@
     <h2>What it does</h2>
     <div class="grid">
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Truly private</h3><p>Transcription (whisper.cpp) and AI cleanup run entirely on your Mac. Nothing is uploaded, ever.</p></div>
-      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h2l2 6 4-14 3 10 2-4h3"/></svg></div><h3>Live feedback</h3><p>A Spotlight-style bar shows a real-time spectrum while you talk, then a thinking indicator while it works.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h2l2 6 4-14 3 10 2-4h3"/></svg></div><h3>Live feedback</h3><p>Your words appear live above a Spotlight-style spectrum as you talk, then a thinking indicator while it works.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z"/></svg></div><h3>AI cleanup</h3><p>A local LLM removes filler words, stutters and repetitions, and fixes punctuation — keeping your words.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><h3>Learns your words</h3><p>Correct a transcript and Murmure learns the term, then reuses it to transcribe better next time.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M7 12h10"/></svg></div><h3>Editable shortcuts</h3><p>Re-bind every shortcut from the menu, with conflict warnings. Pastes at the cursor in any app, web included.</p></div>
-      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Dictate in parallel</h3><p>Fire off several dictations at once — they're delivered in order, so your text never gets scrambled.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Dictate in parallel</h3><p>Fire off several dictations at once — they stack up and are delivered in order, so your text never gets scrambled.</p></div>
     </div>
   </section>
 
@@ -149,40 +163,114 @@
 (function(){
   var ic={
     mic:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
-    spark:'<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg>',
-    check:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>'
+    micF:'<svg viewBox="0 0 24 24" fill="currentColor"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5.2 11a6.8 6.8 0 0 0 13.6 0h-1.7a5.1 5.1 0 0 1-10.2 0z"/><rect x="11" y="18.4" width="2" height="3.1" rx="1"/><rect x="8.4" y="21" width="7.2" height="1.7" rx="0.85"/></svg>',
+    brain:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.142 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.142 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/></svg>'
   };
   var $=function(id){return document.getElementById(id)};
-  $('mbmic').innerHTML=ic.mic;$('cmic').innerHTML=ic.mic;
-  var barsEl=$('bars'),bars=[];
-  for(var i=0;i<26;i++){var b=document.createElement('div');b.className='bar';barsEl.appendChild(b);bars.push(b)}
-  var REC=3300,THINK=1500,TYPE=1900,PASTE=1500,IDLE=950;
-  var messy=['okay','so','um','I','think','we','should','uh','ship','the','the','beta','on','friday','and','tell','the','team'];
-  var clean='I think we should ship the beta on Friday and tell the team.';
+  $('mbmic').innerHTML=ic.mic;
+
+  // Two example dictations (messy live preview → clean pasted text).
+  var M1={messy:['okay','so','um','I','think','we','should','uh','ship','the','the','beta','on','friday'],clean:'I think we should ship the beta on Friday.'};
+  var M2={messy:['and','uh','can','you','review','the','the','pull','request','before','lunch'],clean:'Can you review the pull request before lunch?'};
+
+  var REC=2600,THINK=1500,PASTE=1000,IDLE=900;
+
+  // Spectrum animation (shared — only one card records at a time).
   var heights=[],targets=[];for(var k=0;k<26;k++){heights[k]=.08;targets[k]=.08}
   var recording=false,tick=0;
   function shape(i){return .55+.45*Math.sin(Math.PI*i/25)}
-  function frame(){for(var i=0;i<26;i++){heights[i]+=(targets[i]-heights[i])*.3;var lv=Math.max(0,heights[i]);bars[i].style.height=(6+lv*24).toFixed(1)+'px';bars[i].style.opacity=(0.45+lv*0.5).toFixed(2)}requestAnimationFrame(frame)}
+  function frame(){
+    var bs=document.querySelectorAll('#mur .overlay .card.s-rec .bar');
+    for(var i=0;i<bs.length;i++){var lv=Math.max(0,heights[i%26]);bs[i].style.height=(6+lv*24).toFixed(1)+'px';bs[i].style.opacity=(0.45+lv*0.5).toFixed(2)}
+    requestAnimationFrame(frame);
+  }
   requestAnimationFrame(frame);
   setInterval(function(){if(!recording){return}tick++;var speaking=(tick%5)!==4;for(var i=0;i<26;i++){targets[i]=speaking?(.18+Math.random()*.82)*shape(i):.06}},80);
+
+  // --- Stack model: stack[0] = most recent (top, big). Each item {n,state,el}. ---
+  var overlay=$('overlay'),stack=[];
+  function buildCard(){
+    var el=document.createElement('div');el.className='card';
+    var b='';for(var i=0;i<26;i++){b+='<span class="bar"></span>'}
+    el.innerHTML='<span class="c-mic">'+ic.micF+'</span><div class="bars">'+b+'</div>'+
+      '<div class="think"><span class="tlabel">Thinking…</span><div class="prog"><div class="progbar"></div></div></div>'+
+      '<div class="notice"><span>Pasted</span></div><div class="clabel"></div>';
+    return el;
+  }
+  function clabelFor(s){return s==='rec'?'Listening…':(s==='think'?'Thinking…':'Pasted')}
+  function render(){
+    overlay.classList.toggle('on',stack.length>0);
+    recording=false;
+    for(var i=0;i<stack.length;i++){
+      var o=stack[i],el=o.el,r=Math.min(i,2);
+      el.className='card r'+r+' s-'+o.state;
+      el.style.display=i>2?'none':'';
+      el.querySelector('.clabel').textContent=clabelFor(o.state);
+      overlay.appendChild(el); // reorder so DOM order == stack order (index 0 on top)
+      if(o.state==='rec'){recording=true}
+    }
+    // Marker reflects the front (newest active) dictation; number shows when several are live.
+    var m=$('marker');
+    if(!stack.length||stack[0].state==='paste'){m.className='marker';return}
+    m.className='marker on';
+    $('m-ic').innerHTML=stack[0].state==='rec'?ic.micF:ic.brain;
+    var nn=$('m-n');
+    if(stack.length>1){nn.textContent=stack[0].n;nn.classList.add('on')}else{nn.classList.remove('on')}
+  }
+  function push(n,s){stack.unshift({n:n,state:s,el:buildCard()});render()}
+  function setState(n,s){for(var i=0;i<stack.length;i++){if(stack[i].n===n){stack[i].state=s;break}}render()}
+  function pop(n){for(var i=0;i<stack.length;i++){if(stack[i].n===n){stack[i].el.remove();stack.splice(i,1);break}}render()}
+
   var gen=0,wait=function(ms){return new Promise(function(r){setTimeout(r,ms)})};
-  function marker(name){var m=$('marker');if(!name){m.className='marker';m.innerHTML='';return}m.className='marker on';m.innerHTML=ic[name]}
-  function card(s){$('card').className='card'+(s?(' s-'+s):'')}
-  async function reveal(g){$('subtitle').textContent='';$('subtitle').classList.add('on');for(var i=0;i<messy.length;i++){await wait(REC*.78/messy.length);if(g!==gen)return;$('subtitle').textContent+=(i?' ':'')+messy[i]}}
-  async function type(g){for(var i=0;i<clean.length;i++){await wait(25);if(g!==gen)return;$('typed').textContent=clean.slice(0,i+1)}}
+  var stale=function(g){return g!==gen};
+  function step(t){$('step').textContent=t}
+  function subOff(){$('subtitle').classList.remove('on')}
+  async function reveal(g,words,dur){
+    $('subtitle').textContent='';$('subtitle').classList.add('on');
+    for(var i=0;i<words.length;i++){await wait(dur/words.length);if(stale(g))return;$('subtitle').textContent+=(i?' ':'')+words[i]}
+  }
+  async function type(g,clean,prefix){
+    for(var i=0;i<clean.length;i++){await wait(22);if(stale(g))return;$('typed').textContent=prefix+clean.slice(0,i+1)}
+  }
+
+  // One dictation, start to finish.
+  async function single(g){
+    push(1,'rec');step('Listening — live spectrum, flat when silent');reveal(g,M1.messy,REC*0.8);
+    await wait(REC);if(stale(g))return;
+    setState(1,'think');subOff();step('Cleaning up on-device — no cloud');
+    await wait(THINK);if(stale(g))return;
+    setState(1,'paste');step('Pasted at your cursor');await type(g,M1.clean,'');if(stale(g))return;
+    await wait(PASTE);if(stale(g))return;
+    pop(1);
+  }
+
+  // Two at once: #2 starts while #1 is still thinking; delivered in start order.
+  async function parallel(g){
+    push(1,'rec');step('Listening…');reveal(g,M1.messy,REC*0.8);
+    await wait(REC);if(stale(g))return;
+    setState(1,'think');subOff();step('Start another without waiting…');
+    await wait(620);if(stale(g))return;
+    push(2,'rec');step('Two dictations at once — they stack up');reveal(g,M2.messy,REC*0.8);
+    await wait(REC);if(stale(g))return;
+    setState(2,'think');subOff();step('Delivered in the order you started them');
+    await wait(700);if(stale(g))return;
+    setState(1,'paste');await type(g,M1.clean,'');if(stale(g))return;   // #1 (first) pastes first
+    await wait(360);pop(1);if(stale(g))return;                          // #2 slides down to the top
+    await wait(THINK*0.55);if(stale(g))return;
+    setState(2,'paste');await type(g,M2.clean,M1.clean+' ');if(stale(g))return;
+    await wait(PASTE);pop(2);
+  }
+
+  var altMode=false;
   async function run(){
     var g=++gen;
-    recording=false;$('typed').textContent='';$('subtitle').classList.remove('on');$('subtitle').textContent='';$('overlay').classList.remove('on');marker(null);card('');$('step').textContent='Press Fn to dictate';
-    await wait(IDLE);if(g!==gen)return;
-    recording=true;card('rec');$('overlay').classList.add('on');marker('mic');$('step').textContent='Listening — live spectrum, flat when silent';reveal(g);
-    await wait(REC);if(g!==gen)return;
-    recording=false;card('think');marker('spark');$('subtitle').classList.remove('on');$('step').textContent='Cleaning up on-device (no cloud)';
-    var p=$('prog');p.style.transition='none';p.style.width='8%';void p.offsetWidth;p.style.transition='width '+THINK+'ms linear';p.style.width='100%';
-    await wait(THINK);if(g!==gen)return;
-    card('paste');marker('check');$('step').textContent='Pasted at your cursor';type(g);
-    await wait(TYPE+PASTE);if(g!==gen)return;
-    $('overlay').classList.remove('on');marker(null);
-    await wait(700);if(g!==gen)return;
+    stack.forEach(function(o){o.el.remove()});stack=[];render();
+    $('typed').textContent='';subOff();$('subtitle').textContent='';step('Press Fn to dictate');
+    await wait(IDLE);if(stale(g))return;
+    if(altMode){await parallel(g)}else{await single(g)}
+    altMode=!altMode;
+    if(stale(g))return;
+    await wait(900);if(stale(g))return;
     run();
   }
   $('replay').addEventListener('click',function(){run()});
