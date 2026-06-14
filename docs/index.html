@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Murmure — local voice dictation for macOS</title>
+<meta name="description" content="Press a key, speak, get clean text at your cursor. 100% on-device transcription and AI cleanup. Free and open source for macOS.">
+<style>
+  :root{--accent:#0A84FF;--bg:#0e1018;--bg2:#161a26;--ink:#f4f6fb;--muted:#9aa3b8;--line:rgba(255,255,255,.10)}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:920px;margin:0 auto;padding:0 22px}
+  .logo{width:54px;height:54px;border-radius:14px;background:linear-gradient(160deg,#0A84FF,#0066d6);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 10px 30px rgba(10,132,255,.4)}
+  header{text-align:center;padding:74px 0 16px}
+  h1{font-size:54px;letter-spacing:-1.5px;margin:18px 0 6px;font-weight:600}
+  .tag{font-size:20px;color:var(--muted);max-width:620px;margin:0 auto 22px}
+  .badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:24px}
+  .badge{font-size:12.5px;color:var(--muted);border:0.5px solid var(--line);border-radius:999px;padding:4px 11px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:500;padding:11px 20px;border-radius:11px;border:0.5px solid var(--line);color:var(--ink);transition:.15s}
+  .btn:hover{border-color:rgba(255,255,255,.28)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+  .btn.primary:hover{filter:brightness(1.08)}
+  section{padding:46px 0}
+  h2{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:center;margin:0 0 26px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+  .feat{background:var(--bg2);border:0.5px solid var(--line);border-radius:16px;padding:20px}
+  .feat .fi{color:var(--accent);margin-bottom:10px;display:flex}
+  .feat h3{margin:0 0 5px;font-size:16px;font-weight:600}
+  .feat p{margin:0;font-size:14px;color:var(--muted)}
+  pre{background:#070810;border:0.5px solid var(--line);border-radius:12px;padding:16px 18px;overflow:auto;font:13.5px/1.6 "SF Mono",ui-monospace,Menlo,monospace;color:#cfe0ff}
+  .install-note{font-size:13.5px;color:var(--muted);text-align:center;margin-top:12px}
+  footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:0.5px solid var(--line);margin-top:30px}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+  #mur{--accent:#0A84FF;margin:8px 0 4px}
+  #mur .screen{position:relative;height:432px;border-radius:16px;overflow:hidden;background:#1b2233;border:0.5px solid var(--line);box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  #mur .menubar{position:absolute;top:0;left:0;right:0;height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:rgba(10,12,20,.45);color:rgba(255,255,255,.92);font-size:12px;backdrop-filter:blur(8px)}
+  #mur .mb-r{display:flex;align-items:center;gap:10px}
+  #mur .mb-mic{color:var(--accent);display:flex}
+  #mur .win{position:absolute;top:62px;left:50%;transform:translateX(-50%);width:368px;background:#fff;border-radius:11px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.4)}
+  #mur .tb{height:38px;background:#f5f5f7;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:0.5px solid rgba(0,0,0,.08)}
+  #mur .dot{width:11px;height:11px;border-radius:50%}
+  #mur .dot.r{background:#ff5f57}#mur .dot.y{background:#febc2e}#mur .dot.g{background:#28c840}
+  #mur .tb-t{margin-left:6px;font-size:12px;color:#7b7b80}
+  #mur .doc{padding:16px 18px 22px}
+  #mur .doc-h{font-size:13px;font-weight:500;color:#9a9aa0;margin-bottom:10px}
+  #mur .line{font-size:15px;line-height:1.5;color:#1d1d1f;min-height:44px}
+  #mur .caret{display:inline-block;width:2px;height:17px;background:var(--accent);vertical-align:-3px;animation:bl 1s steps(1) infinite}
+  @keyframes bl{50%{opacity:0}}
+  #mur .marker{display:none;width:19px;height:19px;border-radius:50%;background:var(--accent);color:#fff;vertical-align:-4px;margin-left:5px;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(10,132,255,.5)}
+  #mur .marker.on{display:inline-flex}
+  #mur .subtitle{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);max-width:320px;text-align:center;font-size:13px;color:rgba(255,255,255,.7);opacity:0;transition:opacity .3s;font-style:italic}
+  #mur .subtitle.on{opacity:1}
+  #mur .overlay{position:absolute;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);opacity:0;transition:opacity .35s,transform .35s}
+  #mur .overlay.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  #mur .card{min-width:312px;height:52px;display:flex;align-items:center;gap:10px;padding:0 16px;border-radius:15px;background:rgba(26,26,32,.72);backdrop-filter:blur(24px) saturate(1.6);-webkit-backdrop-filter:blur(24px) saturate(1.6);border:0.5px solid rgba(255,255,255,.14);color:#fff;box-shadow:0 14px 40px rgba(0,0,0,.45)}
+  #mur .c-mic{color:var(--accent);display:none;animation:pulse .9s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  #mur .bars{flex:1;height:100%;display:none;align-items:center;justify-content:center;gap:3px}
+  #mur .bar{width:4px;height:26px;background:var(--accent);border-radius:2px;transform:scaleY(.1);transform-origin:center}
+  #mur .think{flex:1;display:none;flex-direction:column;gap:6px;align-items:flex-start}
+  #mur .tlabel{font-size:12.5px;color:rgba(255,255,255,.92)}
+  #mur .prog{width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,.16);overflow:hidden}
+  #mur .progbar{height:100%;width:8%;background:var(--accent);border-radius:2px}
+  #mur .notice{flex:1;display:none;align-items:center;gap:7px;font-size:13px}
+  #mur .notice .chk{color:#34c759;display:flex}
+  #mur .card.s-rec .c-mic,#mur .card.s-rec .bars{display:flex}
+  #mur .card.s-think .think{display:flex}
+  #mur .card.s-paste .notice{display:flex}
+  #mur .controls{display:flex;align-items:center;gap:12px;justify-content:center;padding-top:16px}
+  #mur .controls button{font:14px/1 inherit;color:var(--ink);background:transparent;border:0.5px solid var(--line);border-radius:9px;padding:8px 16px;cursor:pointer}
+  #mur .controls button:hover{border-color:rgba(255,255,255,.3)}
+  #mur .step{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div style="display:flex;justify-content:center">
+      <div class="logo"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></div>
+    </div>
+    <h1>Murmure</h1>
+    <p class="tag">Local voice dictation for macOS. Press a key, speak, and get clean text right where your cursor is — 100% on your Mac.</p>
+    <div class="badges">
+      <span class="badge">100% on-device</span>
+      <span class="badge">No account, no cloud</span>
+      <span class="badge">macOS 14+</span>
+      <span class="badge">MIT licensed</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/Hugo291/Murmure">View on GitHub</a>
+      <a class="btn" href="#install">Install</a>
+    </div>
+  </header>
+
+  <section aria-label="Live simulation">
+    <h2>See it in action</h2>
+    <p class="sr-only">A simulation: press Fn, a spectrum bar listens, on-device AI cleans the speech, and the text is pasted at the cursor.</p>
+    <div id="mur">
+      <div class="screen">
+        <div class="menubar"><span>Notes</span><span class="mb-r"><span class="mb-mic" id="mbmic"></span><span>9:41</span></span></div>
+        <div class="win">
+          <div class="tb"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="tb-t">Team sync</span></div>
+          <div class="doc">
+            <div class="doc-h">Today</div>
+            <div class="line"><span id="typed"></span><span class="caret"></span><span class="marker" id="marker"></span></div>
+          </div>
+        </div>
+        <div class="subtitle" id="subtitle"></div>
+        <div class="overlay" id="overlay">
+          <div class="card" id="card">
+            <span class="c-mic" id="cmic"></span>
+            <div class="bars" id="bars"></div>
+            <div class="think"><span class="tlabel">Thinking…</span><div class="prog"><div class="progbar" id="prog"></div></div></div>
+            <div class="notice"><span class="chk" id="chk"></span><span>Pasted</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="controls"><button id="replay" type="button">Replay</button><span class="step" id="step">Press Fn to dictate</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <div class="grid">
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Truly private</h3><p>Transcription (whisper.cpp) and AI cleanup run entirely on your Mac. Nothing is uploaded, ever.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h2l2 6 4-14 3 10 2-4h3"/></svg></div><h3>Live feedback</h3><p>A Spotlight-style bar shows a real-time spectrum while you talk, then a thinking indicator while it works.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z"/></svg></div><h3>AI cleanup</h3><p>A local LLM removes filler words, stutters and repetitions, and fixes punctuation — keeping your words.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><h3>Learns your words</h3><p>Correct a transcript and Murmure learns the term, then reuses it to transcribe better next time.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M7 12h10"/></svg></div><h3>Editable shortcuts</h3><p>Re-bind every shortcut from the menu, with conflict warnings. Pastes at the cursor in any app, web included.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Dictate in parallel</h3><p>Fire off several dictations at once — they're delivered in order, so your text never gets scrambled.</p></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Hugo291/Murmure/main/install.sh)"</code></pre>
+    <p class="install-note">One command. It installs the dependencies, the speech model, builds and signs the app, and launches it. macOS 14 (Sonoma) or later.</p>
+  </section>
+
+  <footer>
+    Murmure — free &amp; open source (MIT). Made by <a href="https://github.com/Hugo291">Hugo291</a>.
+  </footer>
+</div>
+
+<script>
+(function(){
+  var ic={
+    mic:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
+    spark:'<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg>',
+    check:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>'
+  };
+  var $=function(id){return document.getElementById(id)};
+  $('mbmic').innerHTML=ic.mic;$('cmic').innerHTML=ic.mic;$('chk').innerHTML=ic.check;
+  var barsEl=$('bars'),bars=[];
+  for(var i=0;i<26;i++){var b=document.createElement('div');b.className='bar';barsEl.appendChild(b);bars.push(b)}
+  var REC=3300,THINK=1500,TYPE=1900,PASTE=1500,IDLE=950;
+  var messy=['okay','so','um','I','think','we','should','uh','ship','the','the','beta','on','friday','and','tell','the','team'];
+  var clean='I think we should ship the beta on Friday and tell the team.';
+  var heights=[],targets=[];for(var k=0;k<26;k++){heights[k]=.08;targets[k]=.08}
+  var recording=false,tick=0;
+  function shape(i){return .55+.45*Math.sin(Math.PI*i/25)}
+  function frame(){for(var i=0;i<26;i++){heights[i]+=(targets[i]-heights[i])*.3;var v=Math.max(.06,heights[i]);bars[i].style.transform='scaleY('+v.toFixed(3)+')'}requestAnimationFrame(frame)}
+  requestAnimationFrame(frame);
+  setInterval(function(){if(!recording){return}tick++;var speaking=(tick%5)!==4;for(var i=0;i<26;i++){targets[i]=speaking?(.18+Math.random()*.82)*shape(i):.06}},80);
+  var gen=0,wait=function(ms){return new Promise(function(r){setTimeout(r,ms)})};
+  function marker(name){var m=$('marker');if(!name){m.className='marker';m.innerHTML='';return}m.className='marker on';m.innerHTML=ic[name]}
+  function card(s){$('card').className='card'+(s?(' s-'+s):'')}
+  async function reveal(g){$('subtitle').textContent='';$('subtitle').classList.add('on');for(var i=0;i<messy.length;i++){await wait(REC*.78/messy.length);if(g!==gen)return;$('subtitle').textContent+=(i?' ':'')+messy[i]}}
+  async function type(g){for(var i=0;i<clean.length;i++){await wait(25);if(g!==gen)return;$('typed').textContent=clean.slice(0,i+1)}}
+  async function run(){
+    var g=++gen;
+    recording=false;$('typed').textContent='';$('subtitle').classList.remove('on');$('subtitle').textContent='';$('overlay').classList.remove('on');marker(null);card('');$('step').textContent='Press Fn to dictate';
+    await wait(IDLE);if(g!==gen)return;
+    recording=true;card('rec');$('overlay').classList.add('on');marker('mic');$('step').textContent='Listening — live spectrum, flat when silent';reveal(g);
+    await wait(REC);if(g!==gen)return;
+    recording=false;card('think');marker('spark');$('subtitle').classList.remove('on');$('step').textContent='Cleaning up on-device (no cloud)';
+    var p=$('prog');p.style.transition='none';p.style.width='8%';void p.offsetWidth;p.style.transition='width '+THINK+'ms linear';p.style.width='100%';
+    await wait(THINK);if(g!==gen)return;
+    card('paste');marker('check');$('step').textContent='Pasted at your cursor';type(g);
+    await wait(TYPE+PASTE);if(g!==gen)return;
+    $('overlay').classList.remove('on');marker(null);
+    await wait(700);if(g!==gen)return;
+    run();
+  }
+  $('replay').addEventListener('click',function(){run()});
+  run();
+})();
+</script>
+</body>
+</html>

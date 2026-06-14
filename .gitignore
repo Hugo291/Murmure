@@ -1,0 +1,26 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+
+# Build output
+Murmure.app/
+
+# macOS
+.DS_Store
+
+# Models (downloaded by install.sh, ~1.5 GB — never commit)
+*.bin
+
+# Secrets — signing keys and certificates (NEVER commit)
+codesign/
+*.pem
+*.p12
+*.key
+*.cer
+
