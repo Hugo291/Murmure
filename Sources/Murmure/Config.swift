@@ -82,8 +82,28 @@ enum Config {
         return dir
     }
 
+    /// Fichier du modèle whisper utilisé pour la transcription (dans supportDir).
+    static var whisperModel: String {
+        get { d.string(forKey: "whisperModel") ?? "ggml-large-v3-turbo.bin" }
+        set { d.set(newValue, forKey: "whisperModel") }
+    }
+
     static var modelPath: URL {
-        supportDir.appendingPathComponent("ggml-large-v3-turbo.bin")
+        supportDir.appendingPathComponent(whisperModel)
+    }
+
+    /// Modèles whisper INSTALLÉS (fichiers `ggml-*.bin` du dossier support). Jamais de téléchargement.
+    static func installedWhisperModels() -> [String] {
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: supportDir.path) else { return [] }
+        return files.filter { $0.hasPrefix("ggml-") && $0.hasSuffix(".bin") }.sorted()
+    }
+
+    /// Libellé lisible d'un fichier modèle whisper : `ggml-large-v3-turbo.bin` → `large-v3-turbo`.
+    static func whisperLabel(_ file: String) -> String {
+        var s = file
+        if s.hasPrefix("ggml-") { s.removeFirst(5) }
+        if s.hasSuffix(".bin") { s.removeLast(4) }
+        return s
     }
 
     /// Cherche le binaire whisper-cli là où Homebrew/whisper.cpp l'installe.

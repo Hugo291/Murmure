@@ -61,6 +61,44 @@ enum Reformulator {
         return callOllama(system: system, user: user, token: token)
     }
 
+    // MARK: - Catalogue de modèles installés (jamais de téléchargement)
+
+    /// Modèles INSTALLÉS dans Ollama (GET /api/tags). Vide si Ollama est éteint. Bloquant → appeler hors main.
+    static func ollamaModels() -> [String] {
+        guard let url = URL(string: "http://localhost:11434/api/tags"),
+              let json = getJSON(url),
+              let models = json["models"] as? [[String: Any]] else { return [] }
+        return models.compactMap { $0["name"] as? String }.filter(isChatModel).sorted()
+    }
+
+    /// Modèles disponibles dans LM Studio (GET /v1/models). Vide si LM Studio est éteint. Bloquant → hors main.
+    static func lmStudioModels() -> [String] {
+        guard let json = getJSON(URL(string: "http://localhost:1234/v1/models")!),
+              let data = json["data"] as? [[String: Any]] else { return [] }
+        return data.compactMap { $0["id"] as? String }.filter(isChatModel).sorted()
+    }
+
+    /// Écarte les modèles non conversationnels (embeddings, reranking, image, audio) qui ne reformulent pas.
+    private static func isChatModel(_ name: String) -> Bool {
+        let n = name.lowercased()
+        let exclude = ["embed", "rerank", "bge-", "image", "flux", "clip", "diffusion",
+                       "sdxl", "whisper", "tts", "minilm", "nomic"]
+        return !exclude.contains { n.contains($0) }
+    }
+
+    private static func getJSON(_ url: URL) -> [String: Any]? {
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 1.5
+        let sem = DispatchSemaphore(value: 0)
+        var out: [String: Any]?
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            defer { sem.signal() }
+            if let data, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { out = j }
+        }.resume()
+        _ = sem.wait(timeout: .now() + 2.0)
+        return out
+    }
+
     // MARK: - Backends
 
     private static func callLMStudio(system: String, user: String, token: CancelToken?) -> String? {

@@ -79,7 +79,8 @@ Everything runs locally. The speech model (`large-v3-turbo`, ~1.5 GB) lives in
 
 Tune all of this from **Settings**:
 - **AI touch-up** — raw text, light cleanup (default), or full rewrite.
-- **AI engine** — pick Ollama or LM Studio and the model; *Run test* benchmarks response time.
+- **AI engine** — pick any model already installed in Ollama or LM Studio (the menu lists them live; nothing is downloaded). *Test current model* benchmarks its response time.
+- **Transcription model** — choose among the whisper models installed in `~/Library/Application Support/Murmure/`.
 - **Dictation language** — French, English, or auto.
 - **Language** — interface language (English by default, French available).
 

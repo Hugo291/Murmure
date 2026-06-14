@@ -23,15 +23,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pasteQueue: [(job: DictationJob, text: String)] = []
     private var pasting = false
 
-    // Moteurs de reformulation proposés + temps de réponse du dernier test.
-    private let engines: [(name: String, backend: String, model: String)] = [
-        ("LM Studio · gemma4-e4b", "lmstudio", "gemma-4-e4b-it-mlx"),
-        ("Ollama · gemma3:4b", "ollama", "gemma3:4b"),
-        ("Ollama · llama3.2", "ollama", "llama3.2:latest"),
-        ("Ollama · gemma4-e4b", "ollama", "gemma4:e4b-mlx"),
-    ]
+    // Catalogue dynamique des modèles INSTALLÉS (listés depuis Ollama / LM Studio, jamais téléchargés).
+    private var ollamaModelList: [String] = []
+    private var lmStudioModelList: [String] = []
+    private var modelsLoading = false
     private var engineTimes: [String: Double] = [:] // "backend|model" → secondes (négatif = indispo)
     private var testingEngines = false
+    private var testingKey: String?                  // "backend|model" en cours de test (pour l'indicateur …)
+
+    // Rebuild différé du menu si on veut le régénérer pendant qu'il est ouvert.
+    private var menuIsOpen = false
+    private var pendingRebuild = false
 
     // MARK: - Cycle de vie
 
@@ -62,8 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotkey.start()
 
+        // Si le modèle whisper configuré n'existe pas mais qu'un autre est installé, on s'aligne dessus.
+        let installed = Config.installedWhisperModels()
+        if !installed.contains(Config.whisperModel), let first = installed.first { Config.whisperModel = first }
+
         rebuildMenu()
         showFirstRunIfNeeded()
+
+        // Catalogue de modèles : scan initial (re-scanné ensuite à chaque ouverture du menu).
+        refreshModels()
     }
 
     // MARK: - Barre de menus
@@ -91,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func rebuildMenu() {
+        // Ne jamais remplacer le menu pendant qu'il est ouvert (glitch) : on diffère à la fermeture.
+        if menuIsOpen { pendingRebuild = true; return }
         let menu = NSMenu()
 
         let status = NSMenuItem(title: statusLine(), action: nil, keyEquivalent: "")
@@ -138,34 +149,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modeRoot.submenu = modeMenu
         settings.addItem(modeRoot)
 
-        // Moteur + modèle de reformulation (avec temps du dernier test entre parenthèses)
+        // Moteur de reformulation : modèles INSTALLÉS listés dynamiquement (Ollama + LM Studio).
         let engineMenu = NSMenu()
-        for e in engines {
-            let key = "\(e.backend)|\(e.model)"
-            var title = e.name
-            if let t = engineTimes[key] {
-                title += t < 0 ? L.tr("  (unavailable)", "  (indispo)") : String(format: "  (%.1f s)", t)
-            } else if testingEngines {
-                title += "  (…)"
-            }
-            let it = NSMenuItem(title: title, action: #selector(setEngine(_:)), keyEquivalent: "")
-            it.target = self
-            it.representedObject = key
-            let isOn = Config.reformBackend == e.backend &&
-                (e.backend == "lmstudio" ? Config.lmstudioModel == e.model : Config.ollamaModel == e.model)
-            it.state = isOn ? .on : .off
-            engineMenu.addItem(it)
+        addEngineSection(engineMenu, title: "Ollama", backend: "ollama", models: ollamaModelList)
+        if !ollamaModelList.isEmpty && !lmStudioModelList.isEmpty { engineMenu.addItem(.separator()) }
+        addEngineSection(engineMenu, title: "LM Studio", backend: "lmstudio", models: lmStudioModelList)
+        if ollamaModelList.isEmpty && lmStudioModelList.isEmpty {
+            let none = NSMenuItem(title: modelsLoading ? L.tr("Scanning…", "Recherche…")
+                                                       : L.tr("No local model found", "Aucun modèle trouvé"),
+                                  action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            engineMenu.addItem(none)
         }
         engineMenu.addItem(.separator())
-        let testItem = NSMenuItem(title: testingEngines ? L.tr("Testing…", "Test en cours…") : L.tr("Run test", "Lancer test"),
+        let testItem = NSMenuItem(title: testingEngines ? L.tr("Testing…", "Test en cours…")
+                                                        : L.tr("Test current model", "Tester le modèle actuel"),
                                   action: #selector(runEngineTest), keyEquivalent: "")
         testItem.target = self
         testItem.isEnabled = !testingEngines
         engineMenu.addItem(testItem)
+        addItem(engineMenu, L.tr("Refresh list", "Rafraîchir la liste"), #selector(refreshModelsAction))
 
         let modelRoot = NSMenuItem(title: L.tr("AI engine", "Moteur IA"), action: nil, keyEquivalent: "")
         modelRoot.submenu = engineMenu
         settings.addItem(modelRoot)
+
+        // Modèle de TRANSCRIPTION (whisper) : modèles installés dans le dossier support.
+        let whisperMenu = NSMenu()
+        let whisperInstalled = Config.installedWhisperModels()
+        if whisperInstalled.isEmpty {
+            let it = NSMenuItem(title: L.tr("No model installed", "Aucun modèle installé"), action: nil, keyEquivalent: "")
+            it.isEnabled = false
+            whisperMenu.addItem(it)
+        } else {
+            for f in whisperInstalled {
+                let it = NSMenuItem(title: Config.whisperLabel(f), action: #selector(setWhisperModel(_:)), keyEquivalent: "")
+                it.target = self
+                it.representedObject = f
+                it.state = (Config.whisperModel == f) ? .on : .off
+                whisperMenu.addItem(it)
+            }
+        }
+        let whisperRoot = NSMenuItem(title: L.tr("Transcription model", "Modèle de transcription"), action: nil, keyEquivalent: "")
+        whisperRoot.submenu = whisperMenu
+        settings.addItem(whisperRoot)
 
         // Langue de DICTÉE (ce que whisper transcrit)
         let langMenu = NSMenu()
@@ -232,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         addItem(menu, L.tr("Quit Murmure", "Quitter Murmure"), #selector(quit))
 
+        menu.delegate = self
         statusItem.menu = menu
     }
 
@@ -241,11 +269,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(it)
     }
 
+    /// Ajoute une section de moteur (en-tête + un item par modèle installé) au sous-menu « Moteur IA ».
+    private func addEngineSection(_ menu: NSMenu, title: String, backend: String, models: [String]) {
+        guard !models.isEmpty else { return }
+        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        let selected = backend == "lmstudio" ? Config.lmstudioModel : Config.ollamaModel
+        for model in models {
+            var label = "  " + model
+            let key = "\(backend)|\(model)"
+            if let t = engineTimes[key] {
+                label += t < 0 ? L.tr("  (unavailable)", "  (indispo)") : String(format: "  (%.1f s)", t)
+            } else if testingEngines && testingKey == key {
+                label += "  (…)"
+            }
+            let it = NSMenuItem(title: label, action: #selector(setEngine(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = key
+            it.state = (Config.reformBackend == backend && selected == model) ? .on : .off
+            menu.addItem(it)
+        }
+    }
+
+    /// Liste les modèles installés (Ollama + LM Studio) en tâche de fond, puis met le menu à jour.
+    private func refreshModels() {
+        guard !modelsLoading else { return }
+        modelsLoading = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let oll = Reformulator.ollamaModels()
+            let lms = Reformulator.lmStudioModels()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let changed = oll != self.ollamaModelList || lms != self.lmStudioModelList
+                self.ollamaModelList = oll
+                self.lmStudioModelList = lms
+                self.modelsLoading = false
+                if changed { self.rebuildMenu() } // rebuildMenu se diffère lui-même si le menu est ouvert
+            }
+        }
+    }
+
     private func mark(_ ok: Bool) -> String { ok ? "✓" : "✗" }
 
     private func statusLine() -> String {
         if Config.whisperBinary() == nil { return L.tr("⚠︎ whisper-cli missing", "⚠︎ whisper-cli manquant") }
-        if !FileManager.default.fileExists(atPath: Config.modelPath.path) { return L.tr("⚠︎ model downloading…", "⚠︎ modèle en cours de téléchargement") }
+        if !FileManager.default.fileExists(atPath: Config.modelPath.path) {
+            return Config.installedWhisperModels().isEmpty
+                ? L.tr("⚠︎ no transcription model", "⚠︎ aucun modèle de transcription")
+                : L.tr("⚠︎ pick a transcription model", "⚠︎ choisis un modèle de transcription")
+        }
         let key = Config.scDictation.display
         if isRecording { return L.tr("🔴 Recording… (\(key) to stop)", "🔴 Enregistrement… (\(key) pour stopper)") }
         if !jobs.isEmpty { return L.tr("⏳ \(jobs.count) in progress…", "⏳ \(jobs.count) en cours…") }
@@ -556,26 +629,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
-    /// Mesure le temps de réponse de chaque moteur et l'affiche dans le menu.
+    /// Mesure le temps de réponse du modèle ACTUELLEMENT sélectionné et l'affiche dans le menu.
     @objc private func runEngineTest() {
         guard !testingEngines else { return }
         testingEngines = true
-        engineTimes.removeAll()
+        let backend = Config.reformBackend
+        let model = backend == "lmstudio" ? Config.lmstudioModel : Config.ollamaModel
+        let key = "\(backend)|\(model)"
+        testingKey = key
+        engineTimes[key] = nil
         rebuildMenu()
-        let list = engines
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            for e in list {
-                let t = Reformulator.benchmark(backend: e.backend, model: e.model)
-                DispatchQueue.main.async {
-                    self?.engineTimes["\(e.backend)|\(e.model)"] = t ?? -1
-                    self?.rebuildMenu()
-                }
-            }
+            let t = Reformulator.benchmark(backend: backend, model: model)
             DispatchQueue.main.async {
+                self?.engineTimes[key] = t ?? -1
                 self?.testingEngines = false
+                self?.testingKey = nil
                 self?.rebuildMenu()
             }
         }
+    }
+
+    @objc private func refreshModelsAction() { refreshModels() }
+
+    @objc private func setWhisperModel(_ sender: NSMenuItem) {
+        if let f = sender.representedObject as? String { Config.whisperModel = f; rebuildMenu() }
     }
 
     @objc private func setLang(_ sender: NSMenuItem) {
@@ -681,5 +759,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if a.runModal() == .alertFirstButtonReturn {
             Permissions.openInputMonitoringSettings()
         }
+    }
+}
+
+// MARK: - Menu : rafraîchissement des modèles à l'ouverture
+
+extension AppDelegate: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        menuIsOpen = true
+        refreshModels() // re-scanne Ollama/LM Studio ; le résultat s'applique à la fermeture si la liste change
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuIsOpen = false
+        if pendingRebuild { pendingRebuild = false; rebuildMenu() }
     }
 }
