@@ -288,7 +288,7 @@ struct DictionnaireView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                if !store.pending.isEmpty { pendingCard }
+                if !store.pending.isEmpty { PendingValidationView() }
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -327,7 +327,22 @@ struct DictionnaireView: View {
         .navigationTitle(L.tr("Dictionary", "Dictionnaire"))
     }
 
-    private var pendingCard: some View {
+    private func addTerm() {
+        let t = newTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        store.addTerm(t); newTerm = ""
+    }
+}
+
+// MARK: - File de validation partagée (Dictionnaire ET Historique)
+
+/// La carte « Mots à valider » : les mots appris d'une correction n'entrent dans le
+/// dictionnaire qu'après un Valider explicite. Affichée là où l'on corrige (Historique)
+/// et dans le Dictionnaire.
+struct PendingValidationView: View {
+    @ObservedObject private var store = CorrectionStore.shared
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "checklist").foregroundStyle(.orange)
@@ -354,22 +369,16 @@ struct DictionnaireView: View {
                         .font(.caption).foregroundStyle(.tertiary)
                 }
                 .padding(.vertical, 6)
-                Divider()
+                if p.id != store.pending.last?.id { Divider() }
             }
         }
         .padding(18)
         .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.orange.opacity(0.3), lineWidth: 0.5))
     }
-
-    private func addTerm() {
-        let t = newTerm.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
-        store.addTerm(t); newTerm = ""
-    }
 }
 
-// MARK: - Historique (avec bouton copier à droite — voir TranscriptRow)
+// MARK: - Historique (file de validation en haut + dictées avec bouton copier à droite)
 
 struct HistoriqueView: View {
     @ObservedObject private var store = CorrectionStore.shared
@@ -377,6 +386,11 @@ struct HistoriqueView: View {
 
     var body: some View {
         List {
+            if !store.pending.isEmpty {
+                PendingValidationView()
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                    .listRowSeparator(.hidden)
+            }
             if store.transcripts.isEmpty {
                 Text(L.tr("No dictation yet.", "Aucune dictée pour l'instant.")).foregroundStyle(.secondary)
             } else {
