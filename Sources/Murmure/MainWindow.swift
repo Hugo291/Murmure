@@ -181,9 +181,12 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 12) {
-                    statCard("\(store.transcripts.count)", L.tr("Dictations", "Dictées"), "waveform", Pal.blue)
+                    statCard("\(store.transcripts.count)", L.tr("Recent dictations", "Dictées récentes"), "waveform", Pal.blue)
                     statCard("\(store.glossary.count)", L.tr("Dictionary words", "Mots au dictionnaire"), "character.book.closed", Pal.indigo)
-                    statCard("\(store.pending.count)", L.tr("To validate", "À valider"), "checklist", store.pending.isEmpty ? Pal.gray : .orange)
+                    // « À valider » n'apparaît QUE s'il y a des mots en attente (sinon rien).
+                    if !store.pending.isEmpty {
+                        statCard("\(store.pending.count)", L.tr("To validate", "À valider"), "checklist", .orange)
+                    }
                 }
 
                 section(L.tr("Overlay, live", "L'overlay, en direct")) {
@@ -365,8 +368,10 @@ struct PendingValidationView: View {
                         Text("« \(ctx) »").font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(L.tr("heard “\(p.heard)”", "entendu « \(p.heard) »"))
-                        .font(.caption).foregroundStyle(.tertiary)
+                    if !p.heard.isEmpty {
+                        Text(L.tr("heard “\(p.heard)”", "entendu « \(p.heard) »"))
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
                 .padding(.vertical, 6)
                 if p.id != store.pending.last?.id { Divider() }
@@ -384,32 +389,45 @@ struct HistoriqueView: View {
     @ObservedObject private var store = CorrectionStore.shared
     @State private var showingClear = false
 
+    private var entries: [TranscriptEntry] { store.recent(limit: 120) }
+
     var body: some View {
-        List {
-            if !store.pending.isEmpty {
-                PendingValidationView()
-                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                    .listRowSeparator(.hidden)
-            }
-            if store.transcripts.isEmpty {
-                Text(L.tr("No dictation yet.", "Aucune dictée pour l'instant.")).foregroundStyle(.secondary)
-            } else {
-                ForEach(store.recent(limit: 120), id: \.id) { entry in
-                    TranscriptRow(entry: entry)
-                }
-            }
-        }
-        .navigationTitle(L.tr("History", "Historique"))
-        .toolbar {
-            ToolbarItem {
-                Button(role: .destructive) { showingClear = true } label: { Image(systemName: "trash") }
-                    .help(L.tr("Clear history", "Effacer l'historique"))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if !store.pending.isEmpty { PendingValidationView() }
+
+                HStack {
+                    Text(L.tr("Recent dictations", "Dictées récentes").uppercased())
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(role: .destructive) { showingClear = true } label: {
+                        Label(L.tr("Clear", "Effacer"), systemImage: "trash").font(.caption)
+                    }
+                    .controlSize(.small)
                     .confirmationDialog(L.tr("Clear all history?", "Effacer tout l'historique ?"),
                                         isPresented: $showingClear, titleVisibility: .visible) {
                         Button(L.tr("Clear history", "Effacer l'historique"), role: .destructive) { store.clearTranscripts() }
                         Button(L.tr("Cancel", "Annuler"), role: .cancel) {}
                     }
+                }
+
+                if entries.isEmpty {
+                    Text(L.tr("No dictation yet.", "Aucune dictée pour l'instant."))
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(entries, id: \.id) { entry in
+                            TranscriptRow(entry: entry)
+                                .padding(.horizontal, 16).padding(.vertical, 10)
+                            if entry.id != entries.last?.id { Divider().padding(.leading, 16) }
+                        }
+                    }
+                    .background(.background, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary, lineWidth: 0.5))
+                }
             }
+            .padding(24)
         }
+        .navigationTitle(L.tr("History", "Historique"))
     }
 }
