@@ -3,5 +3,5 @@ import AppKit
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.accessory) // app de barre de menus, sans icône Dock
+app.setActivationPolicy(.regular) // vraie app : icône Dock, ⌘-Tab, plein écran (+ icône barre de menus)
 app.run()

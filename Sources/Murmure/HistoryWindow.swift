@@ -36,11 +36,61 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !store.pending.isEmpty {
+                pendingSection
+                Divider()
+            }
             vocabularyHeader
             Divider()
             transcriptList
         }
         .frame(minWidth: 440, minHeight: 480)
+    }
+
+    // MARK: - Mots à valider (l'étape de validation)
+
+    private var pendingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.badge.plus")
+                    .foregroundStyle(Color.accentColor)
+                Text(L.tr("Words to validate", "Mots à valider"))
+                    .font(.headline)
+                Text("\(store.pending.count)")
+                    .font(.caption).fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Color.orange, in: Capsule())
+                Spacer()
+                Button(L.tr("Validate all", "Tout valider")) {
+                    store.validateAllPending()
+                }
+                .controlSize(.small)
+            }
+            Text(L.tr("New words enter the dictionary only after you approve them.",
+                      "Les nouveaux mots n'entrent dans le dictionnaire qu'après ton approbation."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(store.pending) { p in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(p.term).fontWeight(.semibold)
+                        Text(L.tr("heard “\(p.heard)”", "entendu « \(p.heard) »"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(L.tr("Reject", "Rejeter")) { store.rejectPending(p.id) }
+                        .controlSize(.small)
+                        .tint(.red)
+                    Button(L.tr("Validate", "Valider")) { store.validatePending(p.id) }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .padding()
     }
 
     private var vocabularyHeader: some View {
@@ -151,7 +201,7 @@ struct HistoryView: View {
                     }
                 }
             } footer: {
-                Text(L.tr("Edit a text to correct what Murmure misheard — it learns automatically.", "Édite un texte pour corriger ce que Murmure a mal compris — il l'apprend automatiquement."))
+                Text(L.tr("Edit a text to correct what Murmure misheard — it queues the words for you to validate.", "Édite un texte pour corriger ce que Murmure a mal compris — il propose les mots à valider."))
             }
         }
         .listStyle(.inset)
@@ -161,7 +211,7 @@ struct HistoryView: View {
 
 // MARK: - Une ligne (transcript éditable + copie)
 
-private struct TranscriptRow: View {
+struct TranscriptRow: View {
     let entry: TranscriptEntry
     @State private var text: String
     @State private var copied = false
@@ -234,7 +284,7 @@ private struct TranscriptRow: View {
 
 // MARK: - Disposition en flux (puces de vocabulaire qui passent à la ligne)
 
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

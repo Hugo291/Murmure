@@ -215,6 +215,55 @@ final class OverlayController {
 
 // MARK: - Une carte
 
+/// Pastille d'accent du HUD : cercle accent + glyphe blanc.
+/// `wave` = transcription (whisper), `brain` = traitement LLM, `check` = terminé.
+final class WaveBadge: NSView {
+    enum Glyph { case wave, brain, check }
+    var glyph: Glyph = .wave { didSet { needsDisplay = true } }
+
+    override init(frame f: NSRect) { super.init(frame: f); wantsLayer = true }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ r: NSRect) {
+        let b = bounds
+        NSColor.controlAccentColor.setFill()
+        NSBezierPath(ovalIn: b).fill()
+        switch glyph {
+        case .wave:
+            NSColor.white.setFill()
+            let heights: [CGFloat] = [0.30, 0.50, 0.30]
+            let bw: CGFloat = 2.3, gap: CGFloat = 2.3
+            var x = b.midX - (bw * 3 + gap * 2) / 2
+            for hf in heights {
+                let hh = b.height * hf
+                NSBezierPath(roundedRect: NSRect(x: x, y: b.midY - hh / 2, width: bw, height: hh),
+                             xRadius: bw / 2, yRadius: bw / 2).fill()
+                x += bw + gap
+            }
+        case .brain:
+            drawSymbol("brain.head.profile", in: b)
+        case .check:
+            let p = NSBezierPath()
+            p.lineWidth = 2.0; p.lineCapStyle = .round; p.lineJoinStyle = .round
+            NSColor.white.setStroke()
+            p.move(to: NSPoint(x: b.width * 0.30, y: b.height * 0.50))
+            p.line(to: NSPoint(x: b.width * 0.44, y: b.height * 0.36))
+            p.line(to: NSPoint(x: b.width * 0.70, y: b.height * 0.66))
+            p.stroke()
+        }
+    }
+
+    /// Dessine un SF Symbol blanc, centré (pour le cerveau du traitement LLM).
+    private func drawSymbol(_ name: String, in b: NSRect) {
+        guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
+        let cfg = NSImage.SymbolConfiguration(pointSize: b.height * 0.56, weight: .semibold)
+            .applying(.init(paletteColors: [.white]))
+        let img = base.withSymbolConfiguration(cfg) ?? base
+        let s = img.size
+        img.draw(in: NSRect(x: b.midX - s.width / 2, y: b.midY - s.height / 2, width: s.width, height: s.height))
+    }
+}
+
 final class ToastCard: NSView {
     enum Mode: Equatable { case recording, processing(String), notice(String) }
 
@@ -222,46 +271,42 @@ final class ToastCard: NSView {
     var compact = false { didSet { layoutNow() } }
 
     private let effect = NSVisualEffectView()
-    private let mic = NSImageView()
+    private let badge = WaveBadge()
     private let bars = BarsView()
-    private let label = NSTextField(labelWithString: "")
-    private let progress = NSProgressIndicator()
+    private let info = NSTextField(labelWithString: "")    // info à droite : minuteur / « réfléchit… »
+    private let notice = NSTextField(labelWithString: "")  // message centré (Collé, Annulé…)
+    private var recStart: Date?
+    private var clock: Timer?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
 
-        // Vrai matériau système (façon Spotlight), adaptatif clair/sombre.
+        // Vrai matériau système (Liquid Glass), adaptatif clair/sombre.
         effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
         effect.wantsLayer = true
-        effect.maskImage = ToastCard.roundedMask(radius: 15)
+        effect.maskImage = ToastCard.roundedMask(radius: 16)
         addSubview(effect)
 
-        mic.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
-        mic.contentTintColor = .controlAccentColor
-        mic.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-        mic.imageScaling = .scaleProportionallyUpOrDown
-        mic.wantsLayer = true
-        addSubview(mic)
-
+        badge.wantsLayer = true
+        addSubview(badge)
         addSubview(bars)
 
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .labelColor
-        label.alignment = .center
-        label.maximumNumberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
-        label.isBordered = false
-        label.drawsBackground = false
-        addSubview(label)
+        info.font = .systemFont(ofSize: 12.5, weight: .medium)
+        info.textColor = .secondaryLabelColor
+        info.alignment = .right
+        info.isBordered = false; info.drawsBackground = false
+        addSubview(info)
 
-        progress.style = .bar
-        progress.isIndeterminate = true
-        progress.controlSize = .small
-        progress.isHidden = true
-        addSubview(progress)
+        notice.font = .systemFont(ofSize: 13, weight: .medium)
+        notice.textColor = .labelColor
+        notice.alignment = .center
+        notice.maximumNumberOfLines = 1
+        notice.lineBreakMode = .byTruncatingTail
+        notice.isBordered = false; notice.drawsBackground = false
+        addSubview(notice)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -269,53 +314,66 @@ final class ToastCard: NSView {
         self.mode = mode
         switch mode {
         case .recording:
-            mic.isHidden = false; addMicPulse()
-            bars.isHidden = false; bars.start()
-            label.isHidden = true
-            progress.isHidden = true; progress.stopAnimation(nil)
-        case .processing(let t):
-            mic.isHidden = true; removeMicPulse()
-            bars.isHidden = true; bars.stop()
-            label.isHidden = false; label.stringValue = compact ? L.tr("thinking…", "réfléchit…") : t
-            progress.isHidden = compact
-            compact ? progress.stopAnimation(nil) : progress.startAnimation(nil)
+            badge.isHidden = false; badge.glyph = .wave; addBadgePulse()
+            bars.isHidden = false; bars.start(.spectrum)
+            info.isHidden = false
+            notice.isHidden = true
+            startClock()
+        case .processing:
+            badge.isHidden = false; badge.glyph = .brain; removeBadgePulse()   // traitement LLM = cerveau
+            bars.isHidden = false; bars.start(.calm)      // spectre apaisé = « réfléchit » (pas un spinner)
+            info.isHidden = false; info.stringValue = L.tr("thinking…", "réfléchit…")
+            notice.isHidden = true
+            stopClock()
         case .notice(let t):
-            mic.isHidden = true; removeMicPulse()
+            badge.isHidden = true; removeBadgePulse()
             bars.isHidden = true; bars.stop()
-            label.isHidden = false; label.stringValue = t
-            progress.isHidden = true; progress.stopAnimation(nil)
+            info.isHidden = true
+            notice.isHidden = false; notice.stringValue = t
+            stopClock()
         }
         layoutNow()
     }
 
     func setLevels(_ levels: [Float]) { bars.setTargets(levels) }
 
+    private func startClock() {
+        recStart = Date(); updateClock()
+        clock?.invalidate()
+        let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.updateClock() }
+        RunLoop.main.add(t, forMode: .common); clock = t
+    }
+    private func stopClock() { clock?.invalidate(); clock = nil; recStart = nil }
+    private func updateClock() {
+        guard let s = recStart else { return }
+        let e = Int(Date().timeIntervalSince(s))
+        info.stringValue = "\(e / 60):" + String(format: "%02d", e % 60)
+    }
+
     func layoutNow() {
         effect.frame = bounds
         let h = bounds.height, w = bounds.width
-        if case .processing(let t) = mode { label.stringValue = compact ? L.tr("thinking…", "réfléchit…") : t }
-
-        if !mic.isHidden {
-            mic.frame = NSRect(x: 16, y: (h - 18) / 2, width: 18, height: 18)
-            bars.frame = NSRect(x: 40, y: 0, width: w - 54, height: h)
+        if !notice.isHidden {
+            notice.frame = NSRect(x: 10, y: (h - 16) / 2, width: w - 20, height: 16)
+            return
         }
-        if !progress.isHidden {
-            label.frame = NSRect(x: 12, y: h / 2, width: w - 24, height: 15)
-            progress.frame = NSRect(x: 44, y: h / 2 - 10, width: w - 88, height: 6)
-        } else {
-            label.frame = NSRect(x: 10, y: (h - 16) / 2, width: w - 20, height: 16)
-        }
+        let bz: CGFloat = compact ? 22 : 28
+        badge.frame = NSRect(x: 14, y: (h - bz) / 2, width: bz, height: bz)
+        let iw = min(info.intrinsicContentSize.width + 2, 92)
+        info.frame = NSRect(x: w - 14 - iw, y: (h - 16) / 2, width: iw, height: 16)
+        let bx = 14 + bz + 10
+        bars.frame = NSRect(x: bx, y: 0, width: max(0, (w - 14 - iw - 8) - bx), height: h)
     }
 
     override func layout() { super.layout(); layoutNow() }
 
-    private func addMicPulse() {
+    private func addBadgePulse() {
         let p = CABasicAnimation(keyPath: "opacity")
-        p.fromValue = 1.0; p.toValue = 0.35; p.duration = 0.85
+        p.fromValue = 1.0; p.toValue = 0.4; p.duration = 0.85
         p.autoreverses = true; p.repeatCount = .infinity
-        mic.layer?.add(p, forKey: "pulse")
+        badge.layer?.add(p, forKey: "pulse")
     }
-    private func removeMicPulse() { mic.layer?.removeAnimation(forKey: "pulse") }
+    private func removeBadgePulse() { badge.layer?.removeAnimation(forKey: "pulse") }
 
     private static func roundedMask(radius: CGFloat) -> NSImage {
         let d = radius * 2 + 2
@@ -333,7 +391,10 @@ final class ToastCard: NSView {
 // MARK: - Spectre
 
 final class BarsView: NSView {
-    private let barCount = 26
+    enum Style { case spectrum, calm }
+    private let barCount = 28
+    private var style: Style = .spectrum
+    private var phase: Float = 0
     private var targets: [Float]
     private var current: [Float]
     private var timer: Timer?
@@ -347,11 +408,13 @@ final class BarsView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     func setTargets(_ levels: [Float]) {
+        guard style == .spectrum else { return }
         let n = min(levels.count, barCount)
         for i in 0..<n { targets[i] = levels[i] }
     }
 
-    func start() {
+    func start(_ style: Style) {
+        self.style = style
         guard timer == nil else { return }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
@@ -361,28 +424,39 @@ final class BarsView: NSView {
     func stop() {
         timer?.invalidate(); timer = nil
         for i in 0..<barCount { current[i] = 0; targets[i] = 0 }
+        phase = 0
         needsDisplay = true
     }
 
     private func tick() {
-        for i in 0..<barCount { current[i] += (targets[i] - current[i]) * 0.35 }
+        if style == .calm {
+            // Vague douce qui ondule : pas de spinner, le spectre lui-même « respire ».
+            phase += 0.16
+            for i in 0..<barCount {
+                let s = 0.5 + 0.5 * sin(Double(phase) + Double(i) * 0.45)
+                targets[i] = Float(0.12 + 0.20 * s)
+            }
+        }
+        let k: Float = style == .calm ? 0.22 : 0.35
+        for i in 0..<barCount { current[i] += (targets[i] - current[i]) * k }
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
-        let gap: CGFloat = 3
-        let barW = (b.width - gap * CGFloat(barCount - 1)) / CGFloat(barCount)
-        guard barW > 0 else { return }
-        let maxH = b.height - 22
+        let barW: CGFloat = 3, gap: CGFloat = 2.6
+        let total = barW * CGFloat(barCount) + gap * CGFloat(barCount - 1)
+        let startX = (b.width - total) / 2          // faisceau centré, barres fines (façon Apple)
+        guard startX >= -total else { return }
+        let maxH = b.height - 14
         let midY = b.midY
         let accent = NSColor.controlAccentColor
         for i in 0..<barCount {
             let level = CGFloat(max(0.0, current[i]))
-            let hgt = max(2, level * maxH)
-            let x = CGFloat(i) * (barW + gap)
+            let hgt = max(2.5, level * maxH)
+            let x = startX + CGFloat(i) * (barW + gap)
             let rect = NSRect(x: x, y: midY - hgt / 2, width: barW, height: hgt)
-            accent.withAlphaComponent(0.45 + 0.5 * level).setFill()
+            accent.withAlphaComponent(0.5 + 0.5 * level).setFill()
             NSBezierPath(roundedRect: rect, xRadius: barW / 2, yRadius: barW / 2).fill()
         }
     }

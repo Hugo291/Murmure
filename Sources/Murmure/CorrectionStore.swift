@@ -9,6 +9,16 @@ struct TranscriptEntry: Codable {
     var corrected: String?     // ce que l'utilisateur a finalement gardé
 }
 
+/// Un mot candidat au vocabulaire, EN ATTENTE de validation par l'utilisateur.
+/// Les mots n'entrent dans le dictionnaire qu'après un « Valider » explicite.
+struct PendingTerm: Codable, Identifiable {
+    let id: UUID
+    let term: String      // le mot corrigé à ajouter
+    let heard: String     // ce que whisper avait transcrit
+    let context: String?  // la phrase corrigée où le mot apparaît (pour décider en connaissance de cause)
+    let date: Date
+}
+
 /// Persiste l'historique des transcripts et le « vocabulaire appris » à partir des
 /// corrections de l'utilisateur. Sert ensuite à biaiser whisper et le LLM.
 final class CorrectionStore: ObservableObject {
@@ -16,13 +26,19 @@ final class CorrectionStore: ObservableObject {
 
     private let url: URL
     @Published private(set) var transcripts: [TranscriptEntry] = []
-    /// Terme corrigé (casse d'affichage) → nombre d'occurrences.
+    /// Terme corrigé (casse d'affichage) → nombre d'occurrences. Vocabulaire VALIDÉ.
     @Published private(set) var glossary: [String: Int] = [:]
+    /// Mots détectés mais EN ATTENTE de validation (l'étape de validation du dictionnaire).
+    @Published private(set) var pending: [PendingTerm] = []
+    /// Mots explicitement rejetés (en minuscules) → on ne les re-propose plus.
+    private var rejected: Set<String> = []
     private let maxHistory = 200
 
     private struct Payload: Codable {
         var transcripts: [TranscriptEntry]
         var glossary: [String: Int]
+        var pending: [PendingTerm]?   // optionnel : compat avec les anciens fichiers
+        var rejected: [String]?
     }
 
     init() {
@@ -78,13 +94,35 @@ final class CorrectionStore: ObservableObject {
         return t.corrected ?? t.inserted
     }
 
-    /// Annule l'ajout au vocabulaire de `terms` (décrémente / retire).
+    /// Retire `terms` de la file d'attente (annulation douce depuis le toast — ni validé, ni rejeté).
     func unlearn(_ terms: [String]) {
-        for t in terms {
-            if let c = glossary[t] {
-                if c <= 1 { glossary[t] = nil } else { glossary[t] = c - 1 }
-            }
-        }
+        let keys = Set(terms.map { $0.lowercased() })
+        pending.removeAll { keys.contains($0.term.lowercased()) }
+        save()
+    }
+
+    // MARK: - Validation du dictionnaire
+
+    /// Valide un mot en attente → il entre dans le vocabulaire.
+    func validatePending(_ id: UUID) {
+        guard let idx = pending.firstIndex(where: { $0.id == id }) else { return }
+        glossary[pending[idx].term, default: 0] += 1
+        pending.remove(at: idx)
+        save()
+    }
+
+    /// Rejette un mot en attente → retiré, et plus jamais re-proposé.
+    func rejectPending(_ id: UUID) {
+        guard let idx = pending.firstIndex(where: { $0.id == id }) else { return }
+        rejected.insert(pending[idx].term.lowercased())
+        pending.remove(at: idx)
+        save()
+    }
+
+    /// Valide tous les mots en attente d'un coup.
+    func validateAllPending() {
+        for p in pending { glossary[p.term, default: 0] += 1 }
+        pending.removeAll()
         save()
     }
 
@@ -92,6 +130,8 @@ final class CorrectionStore: ObservableObject {
     func clearAll() {
         transcripts = []
         glossary = [:]
+        pending = []
+        rejected = []
         save()
     }
 
@@ -107,16 +147,21 @@ final class CorrectionStore: ObservableObject {
         save()
     }
 
-    /// Mots présents dans la version corrigée mais pas dans l'originale → vocabulaire de l'utilisateur.
-    /// Renvoie la liste des mots ajoutés.
+    /// Mots issus d'une SUBSTITUTION (un mot mal transcrit remplacé par le bon) → mis EN ATTENTE
+    /// de validation (jamais directement dans le dictionnaire). Renvoie les mots mis en file.
     @discardableResult
     private func learn(from original: String, to corrected: String) -> [String] {
-        // On n'apprend QUE les mots issus d'une SUBSTITUTION (un mot mal transcrit remplacé par le
-        // bon), jamais les ajouts ni les suppressions de phrase.
         var added: [String] = []
-        for word in substitutions(tokens(original), tokens(corrected)) {
+        for (heard, word) in substitutionPairs(tokens(original), tokens(corrected)) {
             guard word.count >= 3, isWordlike(word) else { continue }
-            glossary[word, default: 0] += 1
+            let key = word.lowercased()
+            // Ignore : déjà validé, déjà en attente, ou explicitement rejeté.
+            if glossary[word] != nil { continue }
+            if pending.contains(where: { $0.term.lowercased() == key }) { continue }
+            if rejected.contains(key) { continue }
+            let ctx = corrected.trimmingCharacters(in: .whitespacesAndNewlines)
+            pending.append(PendingTerm(id: UUID(), term: word, heard: heard,
+                                       context: String(ctx.prefix(240)), date: Date()))
             added.append(word)
         }
         return added
@@ -124,21 +169,24 @@ final class CorrectionStore: ObservableObject {
 
     private enum DiffKind { case equal, removed, added }
 
-    /// Mots ajoutés faisant partie d'une substitution : un « trou » du diff qui contient
-    /// À LA FOIS du mot retiré et du mot ajouté (≈ remplacement). Ignore ajouts/suppressions purs.
-    private func substitutions(_ old: [String], _ new: [String]) -> [String] {
+    /// Pour chaque « trou » du diff contenant À LA FOIS du retiré et de l'ajouté (≈ remplacement),
+    /// renvoie (entendu, mot ajouté). Ignore les ajouts/suppressions purs.
+    private func substitutionPairs(_ old: [String], _ new: [String]) -> [(String, String)] {
         let ops = diffOps(old, new)
-        var result: [String] = []
+        var result: [(String, String)] = []
         var i = 0
         while i < ops.count {
             if ops[i].1 == .equal { i += 1; continue }
-            var removed = 0
+            var removedWords: [String] = []
             var addedWords: [String] = []
             while i < ops.count, ops[i].1 != .equal {
-                if ops[i].1 == .removed { removed += 1 } else { addedWords.append(ops[i].0) }
+                if ops[i].1 == .removed { removedWords.append(ops[i].0) } else { addedWords.append(ops[i].0) }
                 i += 1
             }
-            if removed > 0, !addedWords.isEmpty { result.append(contentsOf: addedWords) }
+            if !removedWords.isEmpty, !addedWords.isEmpty {
+                let heard = removedWords.joined(separator: " ")
+                for w in addedWords { result.append((heard, w)) }
+            }
         }
         return result
     }
@@ -202,6 +250,8 @@ final class CorrectionStore: ObservableObject {
         if let p = try? dec.decode(Payload.self, from: data) {
             transcripts = p.transcripts
             glossary = p.glossary
+            pending = p.pending ?? []
+            rejected = Set(p.rejected ?? [])
         }
     }
 
@@ -209,7 +259,9 @@ final class CorrectionStore: ObservableObject {
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? enc.encode(Payload(transcripts: transcripts, glossary: glossary)) {
+        let payload = Payload(transcripts: transcripts, glossary: glossary,
+                              pending: pending, rejected: Array(rejected))
+        if let data = try? enc.encode(payload) {
             try? data.write(to: url, options: .atomic)
         }
     }

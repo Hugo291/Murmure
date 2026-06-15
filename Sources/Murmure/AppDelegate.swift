@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let vocabToast = VocabToast()
     private var historyWindow: HistoryWindowController?
     private var commandsWindow: CommandsWindowController?
+    private var settingsWindow: SettingsWindowController?
+    private var mainWindow: MainWindowController?
 
     /// La dictée en cours d'enregistrement (une seule à la fois ; nil si on n'enregistre pas).
     private var recordingJob: DictationJob?
@@ -77,6 +79,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Catalogue de modèles : scan initial (re-scanné ensuite à chaque ouverture du menu).
         refreshModels()
+
+        buildMainMenu()
+        openMain(.accueil)   // vraie app : la fenêtre principale s'ouvre au lancement
+    }
+
+    /// Garde l'app vivante (barre de menus + overlay) même quand la fenêtre principale est fermée.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Clic sur l'icône du Dock → rouvre la fenêtre principale.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { openMain(.accueil) }
+        return true
     }
 
     // MARK: - Barre de menus
@@ -113,7 +127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(status)
         menu.addItem(.separator())
 
-        addItem(menu, L.tr("History & corrections…", "Historique & corrections…"), #selector(openHistory))
+        addItem(menu, L.tr("Open Murmure", "Ouvrir Murmure"), #selector(openMainWindow))
+        addItem(menu, L.tr("Dictionary & history…", "Dictionnaire & historique…"), #selector(openHistory))
         menu.addItem(.separator())
 
         // ----- Sous-menu Réglages -----
@@ -307,9 +322,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.addItem(.separator())
         addItem(settings, L.tr("Open Murmure folder", "Ouvrir le dossier Murmure"), #selector(openSupport))
 
-        let settingsRoot = NSMenuItem(title: L.tr("Settings", "Réglages"), action: nil, keyEquivalent: "")
-        settingsRoot.submenu = settings
-        menu.addItem(settingsRoot)
+        _ = settings // (ancien sous-menu conservé temporairement, non attaché — nettoyage à venir)
+        addItem(menu, L.tr("Settings…", "Réglages…"), #selector(openSettings))
         // -------------------------------
 
         menu.addItem(.separator())
@@ -481,7 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         job.wav = wav
         play("Pop")
         overlay.showProcessing(job)              // carte « réfléchit » dans la pile
-        job.marker.setIcon("brain.head.profile") // pastille → cerveau (traitement)
+        job.marker.setIcon("brain.head.profile") // pastille → cerveau (traitement LLM)
         refreshUI()
         processJob(job, wav: wav)
     }
@@ -828,9 +842,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openMic() { Permissions.openMicrophoneSettings() }
     @objc private func openSpeech() { Permissions.openSpeechSettings() }
 
-    @objc private func openHistory() {
-        if historyWindow == nil { historyWindow = HistoryWindowController() }
-        historyWindow?.showAndReload()
+    @objc private func openMainWindow() { openMain(.accueil) }
+    @objc private func openHistory()    { openMain(.dictionnaire) }
+    @objc private func openSettings()   { openMain(.reglages) }
+
+    /// Ouvre (ou crée) la fenêtre principale sur la section voulue.
+    private func openMain(_ section: AppSection) {
+        if mainWindow == nil {
+            let w = MainWindowController()
+            w.onClose = { [weak self] in self?.mainWindow = nil }   // libère le contrôleur à la fermeture
+            w.settings.onEditShortcuts = { [weak self] in self?.openCommands() }
+            w.settings.onUILanguageChange = { [weak self] in
+                guard let self else { return }
+                let s = self.mainWindow?.nav.section ?? .reglages
+                self.commandsWindow?.window?.close(); self.commandsWindow = nil
+                self.rebuildMenu()
+                // Recrée la fenêtre dans la nouvelle langue (L n'est pas observable par SwiftUI).
+                DispatchQueue.main.async {
+                    self.mainWindow?.close()      // déclenche onClose → mainWindow = nil
+                    self.openMain(s)
+                }
+            }
+            mainWindow = w
+        }
+        mainWindow?.show(section)
+    }
+
+    /// Menu principal de l'app (App + Édition + Fenêtre) — nécessaire pour une vraie app .regular.
+    private func buildMainMenu() {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem(); main.addItem(appItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: L.tr("About Murmure", "À propos de Murmure"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L.tr("Hide Murmure", "Masquer Murmure"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L.tr("Quit Murmure", "Quitter Murmure"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+
+        let editItem = NSMenuItem(); main.addItem(editItem)
+        let edit = NSMenu(title: L.tr("Edit", "Édition"))
+        edit.addItem(withTitle: L.tr("Undo", "Annuler"), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: L.tr("Redo", "Rétablir"), action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: L.tr("Cut", "Couper"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L.tr("Copy", "Copier"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L.tr("Paste", "Coller"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: L.tr("Select All", "Tout sélectionner"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+
+        let winItem = NSMenuItem(); main.addItem(winItem)
+        let win = NSMenu(title: L.tr("Window", "Fenêtre"))
+        win.addItem(withTitle: L.tr("Minimize", "Réduire"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        win.addItem(withTitle: L.tr("Zoom", "Zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        let fs = NSMenuItem(title: L.tr("Enter Full Screen", "Activer le mode plein écran"), action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fs.keyEquivalentModifierMask = [.command, .control]
+        win.addItem(fs)
+        winItem.submenu = win
+
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = win
     }
 
     @objc private func openCommands() {

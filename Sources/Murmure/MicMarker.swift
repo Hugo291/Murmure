@@ -75,7 +75,7 @@ final class MicMarker {
     /// `point` : position écran Cocoa (origine bas-gauche). La pastille se place juste au-dessus.
     func show(at point: CGPoint) {
         anchor = point
-        setIcon("mic.fill")
+        setIcon("waveform")   // pastille = même motif spectre que le HUD
         place()
         addPulse()
         panel.orderFrontRegardless()

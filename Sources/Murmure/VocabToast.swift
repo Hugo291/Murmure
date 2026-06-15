@@ -84,8 +84,8 @@ final class VocabToast {
     }
 
     private func message(for terms: [String]) -> String {
-        terms.count == 1 ? L.tr("“\(terms[0])” added to vocabulary", "« \(terms[0]) » ajouté au vocabulaire")
-                         : L.tr("\(terms.count) words added to vocabulary", "\(terms.count) mots ajoutés au vocabulaire")
+        terms.count == 1 ? L.tr("“\(terms[0])” to validate in the dictionary", "« \(terms[0]) » à valider dans le dico")
+                         : L.tr("\(terms.count) words to validate", "\(terms.count) mots à valider")
     }
 
     private func sizeAndPlace() {
