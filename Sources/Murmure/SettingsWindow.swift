@@ -110,10 +110,10 @@ struct IconBadge: View {
     let symbol: String
     let color: Color
     var body: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(color)
-            .frame(width: 22, height: 22)
-            .overlay(Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white))
+            .frame(width: 27, height: 27)
+            .overlay(Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white))
     }
 }
 
@@ -254,6 +254,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .navigationTitle(L.tr("Settings", "Réglages"))
         .frame(minWidth: 480, minHeight: 420)
         .task { model.scan() }
     }

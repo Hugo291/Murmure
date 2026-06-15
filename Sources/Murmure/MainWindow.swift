@@ -58,22 +58,48 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
+// MARK: - Palette (alignée sur la maquette)
+
+enum Pal {
+    static let blue   = Color(red: 0.04, green: 0.52, blue: 1.0)
+    static let indigo = Color(red: 0.37, green: 0.36, blue: 0.90)
+    static let teal   = Color(red: 0.19, green: 0.69, blue: 0.78)
+    static let gray   = Color(red: 0.56, green: 0.56, blue: 0.58)
+    static let grad   = LinearGradient(colors: [blue, indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+/// Petit faisceau de barres (logo / spectre).
+struct BarsGlyph: View {
+    var heights: [CGFloat]
+    var width: CGFloat = 2.4
+    var color: Color = .white
+    var body: some View {
+        HStack(spacing: width) {
+            ForEach(heights.indices, id: \.self) { i in
+                Capsule().fill(color).frame(width: width, height: heights[i])
+            }
+        }
+    }
+}
+
+struct LogoMark: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Pal.grad)
+            .overlay(BarsGlyph(heights: [8, 12, 16, 12, 8], width: 2.4))
+            .shadow(color: Pal.blue.opacity(0.35), radius: 5, y: 2)
+    }
+}
+
 // MARK: - Vue principale
 
 struct MainView: View {
     @ObservedObject var nav: NavModel
     @ObservedObject var settings: SettingsModel
 
-    private var selection: Binding<AppSection?> {
-        Binding(get: { nav.section }, set: { nav.section = $0 ?? nav.section })
-    }
-
     var body: some View {
         NavigationSplitView {
-            List(AppSection.allCases, id: \.self, selection: selection) { s in
-                Label(s.title, systemImage: s.symbol).tag(s)
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 222, max: 300)
+            SidebarView(nav: nav)
+                .navigationSplitViewColumnWidth(min: 214, ideal: 226, max: 280)
         } detail: {
             switch nav.section {
             case .accueil:      DashboardView()
@@ -85,7 +111,68 @@ struct MainView: View {
     }
 }
 
-// MARK: - Accueil
+// MARK: - Barre latérale (sur mesure : logo, sections, pastilles, pied)
+
+struct SidebarView: View {
+    @ObservedObject var nav: NavModel
+    @ObservedObject private var store = CorrectionStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 9) {
+                LogoMark().frame(width: 30, height: 30)
+                Text("Murmure").font(.system(size: 15, weight: .semibold))
+            }
+            .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 12)
+
+            sectionLabel(L.tr("General", "Général"))
+            navRow(.accueil, "house", Pal.blue)
+            navRow(.dictionnaire, "character.book.closed", Pal.indigo)
+            navRow(.historique, "clock.arrow.circlepath", Pal.teal)
+
+            sectionLabel(L.tr("Configuration", "Configuration"))
+            navRow(.reglages, "gearshape", Pal.gray)
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                Circle().fill(.green).frame(width: 7, height: 7)
+                Text("\(L.tr("Ready", "Prêt")) · \(Config.whisperLabel(Config.whisperModel))")
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .padding(.horizontal, 8).padding(.top, 8)
+            .overlay(Divider(), alignment: .top)
+        }
+        .padding(10)
+    }
+
+    private func sectionLabel(_ t: String) -> some View {
+        Text(t.uppercased())
+            .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 3)
+    }
+
+    private func navRow(_ s: AppSection, _ symbol: String, _ color: Color) -> some View {
+        let sel = nav.section == s
+        return Button { nav.section = s } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(sel ? Color.white.opacity(0.22) : color)
+                    .frame(width: 24, height: 24)
+                    .overlay(Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white))
+                Text(s.title).font(.system(size: 14, weight: .medium))
+                Spacer()
+            }
+            .padding(.horizontal, 9).padding(.vertical, 7)
+            .background(sel ? Pal.blue : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(sel ? .white : .primary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Accueil (sur mesure : stats compactes + aperçus overlay + indicateur curseur)
 
 struct DashboardView: View {
     @ObservedObject private var store = CorrectionStore.shared
@@ -94,23 +181,38 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 12) {
-                    statCard("\(store.recent(limit: 1000).count)", L.tr("Dictations", "Dictées"), "waveform")
-                    statCard("\(store.glossary.count)", L.tr("Dictionary words", "Mots au dictionnaire"), "character.book.closed")
-                    statCard("\(store.pending.count)", L.tr("To validate", "À valider"), "checklist", store.pending.isEmpty ? .secondary : .orange)
+                    statCard("\(store.transcripts.count)", L.tr("Dictations", "Dictées"), "waveform", Pal.blue)
+                    statCard("\(store.glossary.count)", L.tr("Dictionary words", "Mots au dictionnaire"), "character.book.closed", Pal.indigo)
+                    statCard("\(store.pending.count)", L.tr("To validate", "À valider"), "checklist", store.pending.isEmpty ? Pal.gray : .orange)
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L.tr("How it works", "Comment ça marche")).font(.headline)
-                    HStack(spacing: 14) {
-                        step("waveform", L.tr("Press Fn, speak", "Appuie sur Fn, parle"), .blue)
-                        Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                        step("brain.head.profile", L.tr("Local AI cleans it", "L'IA locale nettoie"), .indigo)
-                        Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                        step("text.cursor", L.tr("Pasted at the cursor", "Collé au curseur"), .teal)
+                section(L.tr("Overlay, live", "L'overlay, en direct")) {
+                    HStack(spacing: 16) {
+                        hud(brain: false, trailing: "0:04", calm: false)
+                        hud(brain: true, trailing: L.tr("thinking…", "réfléchit…"), calm: true)
                     }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+                    .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(stageBG)
+                }
+
+                section(L.tr("Indicator at the caret", "Indicateur au point de saisie")) {
+                    HStack(spacing: 18) {
+                        ZStack(alignment: .topTrailing) {
+                            HStack(spacing: 0) {
+                                Text(L.tr("Hello, this is a dictation", "Bonjour, ceci est une dictée"))
+                                Rectangle().fill(Pal.blue).frame(width: 2, height: 17)
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 13)
+                            .background(.background, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 0.5))
+                            caretPastille.offset(x: 11, y: -11)
+                        }
+                        Text(L.tr("A pastille marks the field receiving the transcription. Click it to cancel the destination.",
+                                  "Une pastille marque le champ qui reçoit la transcription. Clique-la pour annuler la destination."))
+                            .font(.caption).foregroundStyle(.secondary).frame(width: 230, alignment: .leading)
+                    }
+                    .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(stageBG)
                 }
             }
             .padding(26)
@@ -118,27 +220,60 @@ struct DashboardView: View {
         .navigationTitle(L.tr("Home", "Accueil"))
     }
 
-    private func statCard(_ n: String, _ label: String, _ symbol: String, _ tint: Color = .accentColor) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: symbol).foregroundStyle(tint)
-            Text(n).font(.system(size: 30, weight: .semibold))
-            Text(label).font(.callout).foregroundStyle(.secondary)
+    private var stageBG: some ShapeStyle { LinearGradient(colors: [Color(white: 0.93), Color(white: 0.89)], startPoint: .top, endPoint: .bottom) }
+
+    private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title.uppercased()).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            content().clipShape(RoundedRectangle(cornerRadius: 16))
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func statCard(_ n: String, _ label: String, _ symbol: String, _ tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 15, weight: .semibold))
+            Text(n).font(.system(size: 26, weight: .semibold))
+            Text(label).font(.system(size: 12.5)).foregroundStyle(.secondary)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary, lineWidth: 0.5))
     }
 
-    private func step(_ symbol: String, _ text: String, _ color: Color) -> some View {
-        VStack(spacing: 8) {
+    private func hud(brain: Bool, trailing: String, calm: Bool) -> some View {
+        HStack(spacing: 12) {
             ZStack {
-                Circle().fill(color).frame(width: 38, height: 38)
-                Image(systemName: symbol).foregroundStyle(.white).font(.system(size: 16, weight: .semibold))
+                Circle().fill(Pal.grad).frame(width: 30, height: 30).shadow(color: Pal.blue.opacity(0.4), radius: 5, y: 2)
+                if brain {
+                    Image(systemName: "brain.head.profile").foregroundStyle(.white).font(.system(size: 14, weight: .semibold))
+                } else {
+                    BarsGlyph(heights: [8, 13, 8], width: 2.4)
+                }
             }
-            Text(text).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                .frame(width: 110)
+            spectrum(calm: calm)
+            Text(trailing).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary)
+                .lineLimit(1).fixedSize()
         }
+        .padding(.horizontal, 16).frame(height: 54)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.55), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 5)
+    }
+
+    private func spectrum(calm: Bool) -> some View {
+        let n = 16
+        return HStack(spacing: 2.4) {
+            ForEach(0..<n, id: \.self) { i in
+                let env = sin(Double(i) / Double(n - 1) * .pi)
+                let h = calm ? 4 + env * 8 : 4 + env * (0.45 + 0.55 * abs(sin(Double(i) * 1.9))) * 24
+                Capsule().fill(Pal.blue.opacity(0.55 + env * 0.45)).frame(width: 3, height: max(3, CGFloat(h)))
+            }
+        }
+    }
+
+    private var caretPastille: some View {
+        Circle().fill(Pal.grad).frame(width: 26, height: 26).shadow(color: Pal.blue.opacity(0.5), radius: 5, y: 2)
+            .overlay(BarsGlyph(heights: [7, 11, 7], width: 2.0).offset(y: 1))
     }
 }
 

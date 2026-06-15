@@ -843,6 +843,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSpeech() { Permissions.openSpeechSettings() }
 
     @objc private func openMainWindow() { openMain(.accueil) }
+    @objc private func showSection(_ sender: NSMenuItem) {
+        let s = AppSection.allCases
+        if sender.tag >= 0, sender.tag < s.count { openMain(s[sender.tag]) }
+    }
     @objc private func openHistory()    { openMain(.dictionnaire) }
     @objc private func openSettings()   { openMain(.reglages) }
 
@@ -891,6 +895,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: L.tr("Paste", "Coller"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: L.tr("Select All", "Tout sélectionner"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
+
+        let viewItem = NSMenuItem(); main.addItem(viewItem)
+        let viewMenu = NSMenu(title: L.tr("View", "Présentation"))
+        for (i, s) in AppSection.allCases.enumerated() {
+            let it = NSMenuItem(title: s.title, action: #selector(showSection(_:)), keyEquivalent: "\(i + 1)")
+            it.tag = i; it.target = self
+            viewMenu.addItem(it)
+        }
+        viewItem.submenu = viewMenu
 
         let winItem = NSMenuItem(); main.addItem(winItem)
         let win = NSMenu(title: L.tr("Window", "Fenêtre"))

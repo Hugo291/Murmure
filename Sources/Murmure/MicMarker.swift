@@ -8,7 +8,6 @@ final class MicMarker {
     private let panel: NSPanel
     private let dot = MarkerDotView()
     private let img = NSImageView()
-    private let badge = NSImageView()
     private let numberLabel = NSTextField(labelWithString: "")
     private var anchor = CGPoint.zero
     private static let size: CGFloat = 22
@@ -42,14 +41,7 @@ final class MicMarker {
         img.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         dot.addSubview(img)
 
-        // Petit × blanc (sans fond), coin haut-droit, à l'intérieur du rond.
-        let b: CGFloat = 8
-        badge.frame = NSRect(x: s - b - 3, y: s - b - 3, width: b, height: b)
-        badge.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Annuler la destination")
-        badge.contentTintColor = .white
-        badge.imageScaling = .scaleProportionallyDown
-        badge.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 6, weight: .bold)
-        dot.addSubview(badge)
+        // (Plus de × : la pastille reste cliquable pour annuler la destination.)
 
         // Numéro (annotation « 2 », « 3 »…) dans le coin bas-droit, affiché si > 1.
         numberLabel.font = .systemFont(ofSize: 9, weight: .bold)
