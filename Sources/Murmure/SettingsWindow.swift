@@ -187,7 +187,13 @@ struct SettingsView: View {
                 }
             }
 
-            let toGet = Config.whisperCatalog.filter { !model.whisperModels.contains($0.file) }
+            let installedWhisper = Set(model.whisperModels)
+            let hasLarge = installedWhisper.contains { $0.contains("large") }
+            // Cache un modèle déjà installé, ET la variante "large" superflue si on a déjà un large
+            // (large-v3-turbo vs large-v3 : inutile de proposer l'autre, ça prête à confusion).
+            let toGet = Config.whisperCatalog.filter { item in
+                !installedWhisper.contains(item.file) && !(hasLarge && item.file.contains("large"))
+            }
             if !toGet.isEmpty {
                 Section(L.tr("Download a transcription model", "Télécharger un modèle de transcription")) {
                     ForEach(toGet, id: \.file) { item in
