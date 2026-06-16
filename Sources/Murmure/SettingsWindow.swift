@@ -51,6 +51,13 @@ final class SettingsModel: ObservableObject {
                 self?.ollamaModels = oll
                 self?.lmStudioModels = lms
                 self?.whisperModels = Config.installedWhisperModels()
+                // Aligne le réglage sur un VRAI modèle si le configuré n'est plus détecté (préfère Gemma).
+                if Config.reformBackend == "lmstudio", !lms.isEmpty, !lms.contains(Config.lmstudioModel) {
+                    Config.lmstudioModel = lms.first { $0.lowercased().contains("gemma") } ?? lms[0]
+                }
+                if Config.reformBackend == "ollama", !oll.isEmpty, !oll.contains(Config.ollamaModel) {
+                    Config.ollamaModel = oll.first { $0.lowercased().contains("gemma") } ?? oll[0]
+                }
             }
         }
     }
@@ -142,6 +149,25 @@ struct SettingsView: View {
             })
     }
 
+    /// Options du sélecteur de moteur. Inclut TOUJOURS le moteur actuellement configuré —
+    /// même si son serveur est éteint (sinon le sélecteur s'affiche vide) — avec un repère « serveur éteint ».
+    private var engineOptions: [(tag: String, label: String)] {
+        var opts: [(String, String)] = []
+        for m in model.ollamaModels { opts.append(("ollama|\(m)", "Ollama · \(m)")) }
+        for m in model.lmStudioModels { opts.append(("lmstudio|\(m)", "LM Studio · \(m)")) }
+        let cur = engineSelection.wrappedValue
+        if !cur.isEmpty, !opts.contains(where: { $0.0 == cur }) {
+            let p = cur.split(separator: "|", maxSplits: 1).map(String.init)
+            let isLM = p.first == "lmstudio"
+            let name = p.count == 2 ? p[1] : cur
+            let off = isLM ? model.lmStudioModels.isEmpty : model.ollamaModels.isEmpty
+            let label = "\(isLM ? "LM Studio" : "Ollama") · \(name)" + (off ? L.tr("  (server off)", "  (serveur éteint)") : "")
+            opts.insert((cur, label), at: 0)
+        }
+        if opts.isEmpty { opts.append(("", L.tr("No local model found", "Aucun modèle trouvé"))) }
+        return opts
+    }
+
     var body: some View {
         Form {
             Section(L.tr("Transcription", "Transcription")) {
@@ -179,11 +205,7 @@ struct SettingsView: View {
                     Label { Text(L.tr("AI touch-up", "Retouche IA")) } icon: { IconBadge(symbol: "sparkles", color: .purple) }
                 }
                 Picker(selection: engineSelection) {
-                    ForEach(model.ollamaModels, id: \.self) { m in Text("Ollama · \(m)").tag("ollama|\(m)") }
-                    ForEach(model.lmStudioModels, id: \.self) { m in Text("LM Studio · \(m)").tag("lmstudio|\(m)") }
-                    if model.ollamaModels.isEmpty && model.lmStudioModels.isEmpty {
-                        Text(L.tr("No local model found", "Aucun modèle trouvé")).tag("")
-                    }
+                    ForEach(engineOptions, id: \.tag) { opt in Text(opt.label).tag(opt.tag) }
                 } label: {
                     Label { Text(L.tr("AI engine", "Moteur IA")) } icon: { IconBadge(symbol: "cpu", color: .indigo) }
                 }
