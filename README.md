@@ -34,13 +34,35 @@ It's the privacy-respecting, free, open-source take on tools like Wispr Flow or 
 
 ## Install
 
-One command. It installs the dependencies, downloads the speech model, builds and signs the app, and launches it:
+### Option A — one command (recommended)
+
+Installs the dependencies, downloads the speech model, builds and signs the app, and launches it. Everything works out of the box:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Hugo291/Murmure/main/install.sh)"
 ```
 
-Requirements: **macOS 14 (Sonoma) or later**. The installer pulls in Homebrew, `whisper-cpp` and `ollama` if you don't already have them.
+The installer pulls in Homebrew, `whisper-cpp`, LM Studio and `ollama` if you don't already have them.
+
+### Option B — download the app
+
+Grab the latest **[Murmure.dmg](https://github.com/Hugo291/Murmure/releases/latest)**, open it, and drag **Murmure** into **Applications**.
+
+Murmure is free and self-signed (not notarized by Apple), so the **first launch** needs one extra step:
+
+1. Double-click Murmure → macOS says it can't verify the developer. Click **Done**.
+2. Open **System Settings › Privacy & Security**, scroll down, and click **Open Anyway** next to the Murmure message — then confirm.
+   *(Equivalent in Terminal: `xattr -dr com.apple.quarantine /Applications/Murmure.app`.)*
+
+The DMG ships the **app only** — the speech and AI engines aren't bundled. Install them once with Homebrew:
+
+```bash
+brew install whisper-cpp ollama          # speech-to-text + local AI cleanup
+```
+
+Then, from Murmure's menu, download a **transcription model** and an **AI model** in one click each.
+
+Requirements: **macOS 14 (Sonoma) or later**.
 
 ### First launch
 

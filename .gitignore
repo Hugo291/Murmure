@@ -10,6 +10,7 @@ DerivedData/
 
 # Build output
 Murmure.app/
+*.dmg
 
 # macOS
 .DS_Store
