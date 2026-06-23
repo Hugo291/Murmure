@@ -75,22 +75,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !installed.contains(Config.whisperModel), let first = installed.first { Config.whisperModel = first }
 
         rebuildMenu()
-        showFirstRunIfNeeded()
 
         // Catalogue de modèles : scan initial (re-scanné ensuite à chaque ouverture du menu).
         refreshModels()
 
         buildMainMenu()
-        openMain(.accueil)   // vraie app : la fenêtre principale s'ouvre au lancement
+
+        // Service de fond : on repasse en agent invisible (.accessory) dès que la dernière
+        // fenêtre se ferme. On surveille la fermeture de TOUTES les fenêtres pour ça.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification, object: nil)
+
+        // Au TOUT premier lancement on montre la fenêtre (onboarding + configuration) ;
+        // ensuite Murmure démarre en silence dans la barre de menus, sans rien afficher.
+        let firstRun = !UserDefaults.standard.bool(forKey: "didShowWelcome")
+        if firstRun { openMain(.accueil) }
+        showFirstRunIfNeeded()
     }
 
     /// Garde l'app vivante (barre de menus + overlay) même quand la fenêtre principale est fermée.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// Clic sur l'icône du Dock → rouvre la fenêtre principale.
+    /// Clic sur l'icône du Dock (présente seulement quand une fenêtre est ouverte) → rouvre l'accueil.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { openMain(.accueil) }
         return true
+    }
+
+    // MARK: - Service de fond ↔ premier plan
+
+    /// Fait passer l'app au premier plan (icône Dock + ⌘-Tab + menus) le temps d'afficher une fenêtre.
+    private func enterForeground() {
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Une fenêtre s'est fermée → s'il ne reste aucune VRAIE fenêtre visible, on redevient un
+    /// service de fond invisible. Les overlays (.borderless/.nonactivatingPanel) renvoient
+    /// `canBecomeMain == false` : ils ne comptent pas et ne rallument donc pas l'icône Dock.
+    @objc private func windowWillClose(_ note: Notification) {
+        DispatchQueue.main.async { // après la fermeture effective (isVisible repassé à false)
+            let hasRealWindow = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
+            if !hasRealWindow { NSApp.setActivationPolicy(.accessory) }
+        }
     }
 
     // MARK: - Barre de menus
@@ -852,6 +880,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Ouvre (ou crée) la fenêtre principale sur la section voulue.
     private func openMain(_ section: AppSection) {
+        enterForeground()   // service de fond → premier plan le temps d'afficher la fenêtre
         if mainWindow == nil {
             let w = MainWindowController()
             w.onClose = { [weak self] in self?.mainWindow = nil }   // libère le contrôleur à la fermeture
@@ -919,6 +948,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openCommands() {
+        enterForeground()   // service de fond → premier plan le temps d'afficher la fenêtre
         if commandsWindow == nil {
             commandsWindow = CommandsWindowController(
                 setHotkeyRecording: { [weak self] on in self?.hotkey.recording = on },
