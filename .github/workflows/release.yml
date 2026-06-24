@@ -1,0 +1,84 @@
+name: Release
+
+# Déclenché quand tu pousses un tag de version : `git tag v1.1.0 && git push origin v1.1.0`.
+# → construit le DMG signé, en extrait les notes du CHANGELOG, et publie la release
+#   avec le .dmg en pièce jointe. Plus besoin de gh release create à la main.
+#
+# Signature (optionnelle mais RECOMMANDÉE pour garder les autorisations stables) :
+#   Sans secret, le DMG est signé ad-hoc → macOS redemande les permissions à chaque mise à jour.
+#   Pour signer avec ton certificat stable « Murmure Self Signed » comme en local, ajoute 2 secrets
+#   au dépôt (Settings › Secrets and variables › Actions) — étapes à faire TOI-MÊME (clé privée) :
+#     1. Exporter le certificat + sa clé depuis Trousseau d'accès en .p12 (avec un mot de passe).
+#     2. base64 -i cert.p12 | pbcopy   → coller dans le secret  BUILD_CERT_P12_BASE64
+#     3. Le mot de passe du .p12        → dans le secret         BUILD_CERT_PASSWORD
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # nécessaire pour créer/éditer la release
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      HAS_CERT: ${{ secrets.BUILD_CERT_P12_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate (optional)
+        if: env.HAS_CERT == 'true'
+        env:
+          BUILD_CERT_P12_BASE64: ${{ secrets.BUILD_CERT_P12_BASE64 }}
+          BUILD_CERT_PASSWORD: ${{ secrets.BUILD_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KCPASS="$(openssl rand -base64 16)"
+          security create-keychain -p "$KCPASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KCPASS" "$KEYCHAIN"
+          echo "$BUILD_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$BUILD_CERT_PASSWORD" -A -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPASS" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build signed DMG
+        run: ./package-dmg.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Build release notes from CHANGELOG
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          awk -v ver="$VER" '
+            $0 ~ "^## \\[" ver "\\]" { grab = 1; next }
+            grab && /^## \[/ { exit }
+            grab { print }
+          ' CHANGELOG.md > section.md
+          [ -s section.md ] || echo "Release $VER" > section.md
+          {
+            echo "**[⬇ Download Murmure-$VER.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Murmure-$VER.dmg)** — open it and drag **Murmure** into **Applications**."
+            echo
+            echo "> First launch (free, self-signed app): double-click → **Done**, then **System Settings › Privacy & Security › Open Anyway**. The DMG ships the app only — install the engines once with \`brew install whisper-cpp ollama\`."
+            echo
+            cat section.md
+          } > notes.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "Murmure-$VER.dmg" --clobber
+            gh release edit "$TAG" --title "Murmure $VER" --notes-file notes.md
+          else
+            gh release create "$TAG" "Murmure-$VER.dmg" \
+              --title "Murmure $VER" --notes-file notes.md --verify-tag
+          fi
