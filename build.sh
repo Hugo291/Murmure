@@ -18,6 +18,13 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/Contents/MacOS" "$APPDIR/Contents/Resources"
 cp "$BIN" "$APPDIR/Contents/MacOS/$APP"
 
+# Icône de l'app (générée par ./make-icon.sh → icon/Murmure.icns)
+if [ -f "icon/Murmure.icns" ]; then
+  cp "icon/Murmure.icns" "$APPDIR/Contents/Resources/Murmure.icns"
+else
+  echo "⚠︎  icon/Murmure.icns absent — bundle sans icône (lance ./make-icon.sh)"
+fi
+
 cat > "$APPDIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -27,6 +34,7 @@ cat > "$APPDIR/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key>          <string>$BUNDLE_ID</string>
     <key>CFBundleName</key>                <string>$APP</string>
     <key>CFBundleDisplayName</key>         <string>Murmure</string>
+    <key>CFBundleIconFile</key>            <string>Murmure</string>
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>CFBundleShortVersionString</key>  <string>1.0</string>
     <key>CFBundleVersion</key>             <string>1</string>
