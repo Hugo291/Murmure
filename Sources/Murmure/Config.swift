@@ -25,6 +25,60 @@ enum Config {
         set { d.set(newValue.rawValue, forKey: "reformMode") }
     }
 
+    // MARK: - Prompts système de reformulation (éditables dans les Réglages)
+
+    /// Prompts par défaut : source de vérité, servent au repli et au « Réinitialiser ».
+    static let defaultPromptLight = """
+    Tu nettoies un texte dicté à la voix. Corrige la ponctuation, les majuscules et les fautes d'orthographe/grammaire.
+    SUPPRIME les répétitions involontaires, les bégaiements, les faux départs et les mots de remplissage parasites (euh, bah, « pour pour pour »).
+    Garde les mots et le style de l'utilisateur (registre familier compris), ne reformule pas, ne change pas le sens, n'ajoute rien, ne commente pas.
+    Réponds UNIQUEMENT avec le texte nettoyé, sans guillemets ni préambule.
+    """
+
+    static let defaultPromptFull = """
+    Tu es un rédacteur. On te donne un texte dicté à la voix.
+    Reformule-le pour qu'il soit clair, fluide et bien écrit, en conservant fidèlement le sens et la langue d'origine.
+    Réponds UNIQUEMENT avec le texte final, sans guillemets ni préambule ni commentaire.
+    """
+
+    static let defaultPromptSummarize = """
+    Reformule le texte suivant pour qu'il soit clair, fluide et concis.
+    Supprime les répétitions, les hésitations et les tics de langage (« du coup », « en fait », « genre », « tu vois », « voilà »…).
+    Garde fidèlement l'idée principale et le sens, dans la même langue. Ne commente pas.
+    Réponds UNIQUEMENT avec le texte reformulé, sans guillemets ni préambule.
+    """
+
+    /// Consigne « correction légère » (mode .light). Repli sur le défaut si vidée.
+    static var promptLight: String {
+        get { storedPrompt("promptLight", default: defaultPromptLight) }
+        set { d.set(newValue, forKey: "promptLight") }
+    }
+    /// Consigne « reformulation complète » (mode .full). Repli sur le défaut si vidée.
+    static var promptFull: String {
+        get { storedPrompt("promptFull", default: defaultPromptFull) }
+        set { d.set(newValue, forKey: "promptFull") }
+    }
+    /// Consigne pour la reformulation de la sélection (⌘R). Repli sur le défaut si vidée.
+    static var promptSummarize: String {
+        get { storedPrompt("promptSummarize", default: defaultPromptSummarize) }
+        set { d.set(newValue, forKey: "promptSummarize") }
+    }
+
+    /// Prompt système effectif pour un mode de retouche donné.
+    static func prompt(for mode: ReformMode) -> String {
+        switch mode {
+        case .light: return promptLight
+        case .full:  return promptFull
+        case .off:   return ""
+        }
+    }
+
+    /// Valeur stockée si non vide, sinon le défaut — l'IA ne reçoit jamais de consigne vide.
+    private static func storedPrompt(_ key: String, default def: String) -> String {
+        let s = (d.string(forKey: key) ?? "")
+        return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? def : s
+    }
+
     static var ollamaModel: String {
         get { d.string(forKey: "ollamaModel") ?? "gemma3:4b" }
         set { d.set(newValue, forKey: "ollamaModel") }

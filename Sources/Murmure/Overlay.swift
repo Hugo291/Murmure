@@ -111,7 +111,15 @@ final class OverlayController {
     func showRecording(_ owner: AnyObject) { show(owner, .recording) }
     func showProcessing(_ owner: AnyObject, _ text: String = L.tr("Thinking…", "Le modèle réfléchit…")) { show(owner, .processing(text)) }
 
-    func updateLevels(_ levels: [Float]) { cards.first?.card.setLevels(levels) } // seule la carte du haut enregistre
+    /// Alimente le spectre de la carte qui ENREGISTRE — pas simplement celle du haut :
+    /// quand on enchaîne des dictées, la notice « Collé » d'une précédente repasse devant,
+    /// et les niveaux partaient alors sur la mauvaise carte (spectre figé).
+    func updateLevels(_ levels: [Float]) {
+        for item in cards where item.card.mode == .recording {
+            item.card.setLevels(levels)
+            return
+        }
+    }
 
     /// Carte de PROGRESSION persistante (téléchargement de modèle) : texte mis à jour,
     /// SANS auto-retrait. Conclure avec `notice(owner, …)` (qui programme le retrait) ou `remove(owner)`.
@@ -294,7 +302,8 @@ final class ToastCard: NSView {
         addSubview(badge)
         addSubview(bars)
 
-        info.font = .systemFont(ofSize: 12.5, weight: .medium)
+        // Chiffres à chasse fixe : le minuteur ne change plus de largeur en défilant.
+        info.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .medium)
         info.textColor = .secondaryLabelColor
         info.alignment = .right
         info.isBordered = false; info.drawsBackground = false
@@ -359,7 +368,10 @@ final class ToastCard: NSView {
         }
         let bz: CGFloat = compact ? 22 : 28
         badge.frame = NSRect(x: 14, y: (h - bz) / 2, width: bz, height: bz)
-        let iw = min(info.intrinsicContentSize.width + 2, 92)
+        // Largeur FIXE pendant l'enregistrement : sinon la largeur du minuteur (0:09 → 0:10)
+        // rétrécit le cadre des barres, et comme le faisceau est centré, tout le spectre glisse.
+        let iw: CGFloat = { if case .recording = mode { return 46 }
+                            return min(info.intrinsicContentSize.width + 2, 92) }()
         info.frame = NSRect(x: w - 14 - iw, y: (h - 16) / 2, width: iw, height: 16)
         let bx = 14 + bz + 10
         bars.frame = NSRect(x: bx, y: 0, width: max(0, (w - 14 - iw - 8) - bx), height: h)

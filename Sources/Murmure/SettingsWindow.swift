@@ -10,7 +10,7 @@ final class SettingsWindowController: NSWindowController {
     convenience init() {
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 470, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
         win.title = L.tr("Settings", "Réglages")
@@ -138,6 +138,42 @@ struct SettingsView: View {
     @AppStorage("whisperModel") private var whisperModel = "ggml-large-v3-turbo.bin"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
+    // Éditeur de prompts système : quel prompt on édite + son contenu courant.
+    @State private var promptKind: PromptKind = .light
+    @State private var promptLight = Config.promptLight
+    @State private var promptFull = Config.promptFull
+    @State private var promptSummarize = Config.promptSummarize
+
+    private enum PromptKind: String, CaseIterable, Identifiable {
+        case light, full, summarize
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .light:     return L.tr("Light", "Légère")
+            case .full:      return L.tr("Full", "Complète")
+            case .summarize: return L.tr("Selection ⌘R", "Sélection ⌘R")
+            }
+        }
+    }
+
+    /// Binding vers le prompt en cours d'édition (selon l'onglet segmenté).
+    private var currentPrompt: Binding<String> {
+        switch promptKind {
+        case .light:     return $promptLight
+        case .full:      return $promptFull
+        case .summarize: return $promptSummarize
+        }
+    }
+
+    /// Restaure le prompt affiché à sa valeur d'usine.
+    private func resetCurrentPrompt() {
+        switch promptKind {
+        case .light:     promptLight = Config.defaultPromptLight
+        case .full:      promptFull = Config.defaultPromptFull
+        case .summarize: promptSummarize = Config.defaultPromptSummarize
+        }
+    }
+
     private var engineSelection: Binding<String> {
         Binding(
             get: { "\(Config.reformBackend)|\(Config.reformBackend == "lmstudio" ? Config.lmstudioModel : Config.ollamaModel)" },
@@ -229,6 +265,37 @@ struct SettingsView: View {
                 if Config.lmsBinary() != nil && !model.hasLMSGemma {
                     downloadRow(title: "Gemma 3 4B · LM Studio (MLX)", id: "lmstudio:gemma") { model.downloadChat("lmstudio") }
                 }
+            }
+
+            Section {
+                Label {
+                    Picker("", selection: $promptKind) {
+                        ForEach(PromptKind.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                } icon: { IconBadge(symbol: "text.quote", color: .purple) }
+
+                TextEditor(text: currentPrompt)
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(minHeight: 150)
+                    .padding(4)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+                    .onChange(of: promptLight) { _, v in Config.promptLight = v }
+                    .onChange(of: promptFull) { _, v in Config.promptFull = v }
+                    .onChange(of: promptSummarize) { _, v in Config.promptSummarize = v }
+
+                HStack(alignment: .top) {
+                    Text(L.tr("Sent to the local AI as the system prompt. Leave empty to fall back to the default.",
+                              "Envoyé à l'IA locale comme prompt système. Laisse vide pour revenir au défaut."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Button(L.tr("Reset", "Réinitialiser")) { resetCurrentPrompt() }
+                }
+            } header: {
+                Text(L.tr("Reformulation prompt", "Prompt de reformulation"))
             }
 
             Section(L.tr("Feedback", "Retours")) {

@@ -97,8 +97,8 @@ final class SpectrumAnalyzer {
         else { noiseRMS = noiseRMS * 0.999 + rms * 0.001 }          // monte très lentement
         let nf = max(noiseRMS, 1e-5)
         if gateOpen {
-            if rms < nf * 2.0 { gateOpen = false }                 // retombe près du bruit → ferme
-        } else if rms > nf * 3.5 && rms > 0.005 {                  // dépasse franchement le bruit → ouvre
+            if rms < nf * 1.6 { gateOpen = false }                 // retombe près du bruit → ferme
+        } else if rms > nf * 2.4 && rms > 0.003 {                  // seuils assouplis : une voix douce ouvre aussi
             gateOpen = true
         }
         let target: Float = gateOpen ? 1.0 : 0.0
@@ -109,7 +109,7 @@ final class SpectrumAnalyzer {
         let norm = max(agc, 0.006)
         for b in 0..<bandCount {
             var v = cleaned[b] / norm
-            v = powf(min(v, 1.3), 0.7)
+            v = powf(min(v, 1.4), 0.62)   // courbe plus réactive : les niveaux faibles bougent visiblement
             out[b] = min(v, 1.0) * gate
         }
         return out

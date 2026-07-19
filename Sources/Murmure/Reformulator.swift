@@ -9,24 +9,9 @@ enum Reformulator {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return text }
 
-        let system: String
-        switch mode {
-        case .light:
-            system = """
-            Tu nettoies un texte dicté à la voix. Corrige la ponctuation, les majuscules et les fautes d'orthographe/grammaire.
-            SUPPRIME les répétitions involontaires, les bégaiements, les faux départs et les mots de remplissage parasites (euh, bah, « pour pour pour »).
-            Garde les mots et le style de l'utilisateur (registre familier compris), ne reformule pas, ne change pas le sens, n'ajoute rien, ne commente pas.
-            Réponds UNIQUEMENT avec le texte nettoyé, sans guillemets ni préambule.
-            """
-        case .full:
-            system = """
-            Tu es un rédacteur. On te donne un texte dicté à la voix.
-            Reformule-le pour qu'il soit clair, fluide et bien écrit, en conservant fidèlement le sens et la langue d'origine.
-            Réponds UNIQUEMENT avec le texte final, sans guillemets ni préambule ni commentaire.
-            """
-        case .off:
-            return text
-        }
+        // Prompt système éditable dans les Réglages (repli auto sur le défaut si vidé).
+        let system = Config.prompt(for: mode)
+        guard !system.isEmpty else { return text }
 
         var system2 = system
         let terms = CorrectionStore.shared.glossaryTerms(limit: 40)
@@ -42,13 +27,8 @@ enum Reformulator {
     static func summarize(_ text: String) -> String {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return text }
-        let sys = """
-        Reformule le texte suivant pour qu'il soit clair, fluide et concis.
-        Supprime les répétitions, les hésitations et les tics de langage (« du coup », « en fait », « genre », « tu vois », « voilà »…).
-        Garde fidèlement l'idée principale et le sens, dans la même langue. Ne commente pas.
-        Réponds UNIQUEMENT avec le texte reformulé, sans guillemets ni préambule.
-        """
-        return run(system: sys, user: t, token: nil) ?? text
+        // Prompt éditable dans les Réglages (repli auto sur le défaut si vidé).
+        return run(system: Config.promptSummarize, user: t, token: nil) ?? text
     }
 
     /// Envoie au moteur (LM Studio en principal, repli Ollama). nil si tout échoue.
