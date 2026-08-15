@@ -66,7 +66,9 @@ enum Transcriber {
         let text = (try? String(contentsOf: outTxt, encoding: .utf8)) ?? ""
         try? FileManager.default.removeItem(at: outTxt)
         try? FileManager.default.removeItem(at: wav)
-        return clean(text)
+        // Substitutions GARANTIES (ex. « cloud design » → « Claude Design ») sur le texte brut,
+        // avant le nettoyage IA — le glossaire ne fait que biaiser, l'alias impose.
+        return CorrectionStore.shared.applyAliases(clean(text))
     }
 
     private static func clean(_ raw: String) -> String {

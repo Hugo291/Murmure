@@ -285,6 +285,8 @@ struct DashboardView: View {
 struct DictionnaireView: View {
     @ObservedObject private var store = CorrectionStore.shared
     @State private var newTerm = ""
+    @State private var newHeard = ""
+    @State private var newWritten = ""
 
     private var terms: [String] { store.glossaryAlphabetical }
 
@@ -324,6 +326,38 @@ struct DictionnaireView: View {
                             .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
+
+                // Substitutions garanties : imposent l'écriture (contrairement au dico qui ne fait qu'orienter).
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.left.arrow.right").foregroundStyle(Color.accentColor)
+                        Text(L.tr("Guaranteed substitutions", "Substitutions garanties")).font(.headline)
+                    }
+                    Text(L.tr("When a word is systematically misheard, force what gets written. Unlike the dictionary (which only nudges whisper), a substitution always replaces.",
+                              "Quand un mot est systématiquement mal entendu, impose ce qui s'écrit. Contrairement au dictionnaire (qui ne fait qu'orienter whisper), une substitution remplace toujours."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(store.aliases.sorted(by: { $0.key < $1.key }), id: \.key) { heard, written in
+                        HStack(spacing: 8) {
+                            Text("« \(heard) »").foregroundStyle(.secondary)
+                            Image(systemName: "arrow.right").font(.caption).foregroundStyle(.tertiary)
+                            Text(written).fontWeight(.medium)
+                            Spacer()
+                            Button { store.removeAlias(heard) } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain).foregroundStyle(.secondary)
+                        }
+                        .font(.callout)
+                    }
+                    HStack(spacing: 6) {
+                        TextField(L.tr("heard…", "entendu…"), text: $newHeard)
+                            .textFieldStyle(.roundedBorder).frame(maxWidth: 170).onSubmit(addAlias)
+                        Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                        TextField(L.tr("write…", "écrire…"), text: $newWritten)
+                            .textFieldStyle(.roundedBorder).onSubmit(addAlias)
+                        Button(L.tr("Add", "Ajouter"), action: addAlias)
+                            .disabled(newHeard.trimmingCharacters(in: .whitespaces).isEmpty
+                                      || newWritten.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
             }
             .padding(26)
         }
@@ -335,6 +369,11 @@ struct DictionnaireView: View {
         guard !t.isEmpty else { return }
         store.addTerm(t); newTerm = ""
     }
+
+    private func addAlias() {
+        store.setAlias(heard: newHeard, to: newWritten)
+        newHeard = ""; newWritten = ""
+    }
 }
 
 // MARK: - File de validation partagée (Dictionnaire ET Historique)
@@ -344,6 +383,7 @@ struct DictionnaireView: View {
 /// et dans le Dictionnaire.
 struct PendingValidationView: View {
     @ObservedObject private var store = CorrectionStore.shared
+    @State private var showingRejectAll = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -353,6 +393,15 @@ struct PendingValidationView: View {
                 Text("\(store.pending.count)").font(.caption).fontWeight(.semibold).foregroundStyle(.white)
                     .padding(.horizontal, 7).padding(.vertical, 2).background(.orange, in: Capsule())
                 Spacer()
+                Button(L.tr("Reject all", "Tout rejeter")) { showingRejectAll = true }
+                    .controlSize(.small).tint(.red)
+                    .confirmationDialog(L.tr("Reject all pending words?", "Rejeter tous les mots en attente ?"),
+                                        isPresented: $showingRejectAll, titleVisibility: .visible) {
+                        Button(L.tr("Reject all", "Tout rejeter"), role: .destructive) { store.rejectAllPending() }
+                        Button(L.tr("Cancel", "Annuler"), role: .cancel) {}
+                    } message: {
+                        Text(L.tr("They will never be suggested again.", "Ils ne seront plus jamais reproposés."))
+                    }
                 Button(L.tr("Validate all", "Tout valider")) { store.validateAllPending() }.controlSize(.small)
             }
             ForEach(store.pending) { p in

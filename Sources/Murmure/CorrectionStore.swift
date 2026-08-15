@@ -32,6 +32,9 @@ final class CorrectionStore: ObservableObject {
     @Published private(set) var pending: [PendingTerm] = []
     /// Mots explicitement rejetés (en minuscules) → on ne les re-propose plus.
     private var rejected: Set<String> = []
+    /// Substitutions DÉTERMINISTES : ce que whisper entend (en minuscules) → ce qu'il faut écrire.
+    /// Le glossaire ne fait que BIAISER whisper/l'IA ; un alias GARANTIT le mot (remplacement exact).
+    @Published private(set) var aliases: [String: String] = [:]
     private let maxHistory = 200
 
     private struct Payload: Codable {
@@ -39,6 +42,7 @@ final class CorrectionStore: ObservableObject {
         var glossary: [String: Int]
         var pending: [PendingTerm]?   // optionnel : compat avec les anciens fichiers
         var rejected: [String]?
+        var aliases: [String: String]?
     }
 
     init() {
@@ -122,6 +126,13 @@ final class CorrectionStore: ObservableObject {
     /// Valide tous les mots en attente d'un coup.
     func validateAllPending() {
         for p in pending { glossary[p.term, default: 0] += 1 }
+        pending.removeAll()
+        save()
+    }
+
+    /// Rejette tous les mots en attente d'un coup → vidés, et plus jamais re-proposés.
+    func rejectAllPending() {
+        for p in pending { rejected.insert(p.term.lowercased()) }
         pending.removeAll()
         save()
     }
@@ -244,6 +255,33 @@ final class CorrectionStore: ObservableObject {
 
     // MARK: - Persistance
 
+    // MARK: - Substitutions déterministes (aliases : « entendu » → « à écrire »)
+
+    func setAlias(heard: String, to written: String) {
+        let h = heard.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let w = written.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !h.isEmpty, !w.isEmpty else { return }
+        aliases[h] = w; save()
+    }
+
+    func removeAlias(_ heard: String) { aliases[heard.lowercased()] = nil; save() }
+
+    /// Remplace les mots/phrases entendus par leur écriture GARANTIE (frontières de mots, insensible à la
+    /// casse). Les alias les plus longs d'abord (« cloud design » avant un éventuel « cloud »).
+    func applyAliases(_ text: String) -> String {
+        guard !aliases.isEmpty else { return text }
+        var out = text
+        for heard in aliases.keys.sorted(by: { $0.count > $1.count }) {
+            guard let repl = aliases[heard] else { continue }
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: heard) + "\\b"
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let r = NSRange(out.startIndex..., in: out)
+            out = re.stringByReplacingMatches(in: out, options: [], range: r,
+                                              withTemplate: NSRegularExpression.escapedTemplate(for: repl))
+        }
+        return out
+    }
+
     private func load() {
         guard let data = try? Data(contentsOf: url) else { return }
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
@@ -252,6 +290,7 @@ final class CorrectionStore: ObservableObject {
             glossary = p.glossary
             pending = p.pending ?? []
             rejected = Set(p.rejected ?? [])
+            aliases = p.aliases ?? [:]
         }
     }
 
@@ -260,7 +299,7 @@ final class CorrectionStore: ObservableObject {
         enc.dateEncodingStrategy = .iso8601
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         let payload = Payload(transcripts: transcripts, glossary: glossary,
-                              pending: pending, rejected: Array(rejected))
+                              pending: pending, rejected: Array(rejected), aliases: aliases)
         if let data = try? enc.encode(payload) {
             try? data.write(to: url, options: .atomic)
         }
