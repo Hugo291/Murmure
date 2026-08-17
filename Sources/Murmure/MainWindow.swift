@@ -443,8 +443,6 @@ struct HistoriqueView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if !store.pending.isEmpty { PendingValidationView() }
-
                 HStack {
                     Text(L.tr("Recent dictations", "Dictées récentes").uppercased())
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
