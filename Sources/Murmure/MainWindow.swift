@@ -445,11 +445,12 @@ struct HistoriqueView: View {
     private var groups: [TranscriptGroup] {
         var out: [TranscriptGroup] = []
         for e in entries {  // `recent` renvoie du plus récent au plus ancien
-            if let fid = e.fieldID, let last = out.last, last.id == fid {
+            if let fid = e.fieldID, let last = out.last, last.fieldID == fid {
                 // Plus ancien → devant, pour lire le groupe dans l'ordre où le champ s'est rempli.
                 out[out.count - 1].entries.insert(e, at: 0)
             } else {
-                out.append(TranscriptGroup(id: e.fieldID ?? e.id, appName: e.appName, entries: [e]))
+                out.append(TranscriptGroup(id: e.id, fieldID: e.fieldID,
+                                           appName: e.appName, entries: [e]))
             }
         }
         return out
@@ -490,7 +491,13 @@ struct HistoriqueView: View {
 
 /// Des dictées qui ont atterri dans le même input physique — un seul texte, côté champ.
 struct TranscriptGroup: Identifiable {
-    let id: UUID              // le fieldID du champ (ou l'id de la dictée si cible inconnue)
+    /// Identité de la CARTE : l'id de la dictée la plus récente du groupe, donc unique par
+    /// construction. Le `fieldID` ne peut PAS servir d'identité : un même champ peut réapparaître
+    /// plus loin dans l'historique (dictée sans cible entre les deux), et deux id identiques dans
+    /// un `ForEach` SwiftUI = comportement indéfini (cartes perdues, @State partagé).
+    let id: UUID
+    /// Le champ visé — sert UNIQUEMENT à rattacher la dictée suivante à la même suite.
+    let fieldID: UUID?
     let appName: String?
     var entries: [TranscriptEntry]   // ordre CHRONOLOGIQUE, comme le champ s'est rempli
 

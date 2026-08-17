@@ -27,7 +27,13 @@ final class InsertionTarget {
     func capture() {
         element = nil; range = nil; pid = 0; fieldID = nil; appName = nil
         Self.enableWebAX() // réveille l'accessibilité de Chrome/Chromium (désactivée par défaut)
-        guard AXIsProcessTrusted(), let el = focusedElement(), isTextElement(el) else { return }
+        guard AXIsProcessTrusted(), let el = focusedElement(), isTextElement(el) else {
+            // Aucune cible lisible : on OUBLIE le champ précédent. Sinon une dictée ultérieure
+            // dans ce même champ ressusciterait son fieldID, et l'historique se retrouverait avec
+            // deux suites séparées portant la même identité.
+            Self.lastElement = nil; Self.lastFieldID = nil
+            return
+        }
         element = el
         AXUIElementGetPid(el, &pid)
         appName = NSRunningApplication(processIdentifier: pid)?.localizedName
