@@ -9,15 +9,38 @@ final class InsertionTarget {
     private var pid: pid_t = 0
     private var range: AXValue? // kAXSelectedTextRange capturé au démarrage (caret)
 
+    /// Identité du champ visé, STABLE d'une dictée à l'autre : deux dictées qui atterrissent dans
+    /// le MÊME input physique partagent le même `fieldID`. Sert à regrouper l'historique.
+    /// nil quand aucune cible n'a pu être capturée (on ne peut alors rien affirmer).
+    private(set) var fieldID: UUID?
+    /// App qui possède le champ, pour l'entête du groupe dans l'historique.
+    private(set) var appName: String?
+
+    /// Dernier champ capturé, TOUS jobs confondus : chaque dictée a son propre InsertionTarget,
+    /// la mémoire du « champ précédent » doit donc être partagée.
+    private static var lastElement: AXUIElement?
+    private static var lastFieldID: UUID?
+
     var hasTarget: Bool { element != nil }
 
     /// À appeler au démarrage de l'enregistrement.
     func capture() {
-        element = nil; range = nil; pid = 0
+        element = nil; range = nil; pid = 0; fieldID = nil; appName = nil
         Self.enableWebAX() // réveille l'accessibilité de Chrome/Chromium (désactivée par défaut)
         guard AXIsProcessTrusted(), let el = focusedElement(), isTextElement(el) else { return }
         element = el
         AXUIElementGetPid(el, &pid)
+        appName = NSRunningApplication(processIdentifier: pid)?.localizedName
+        // Même élément AX que la dictée précédente → même input physique → même groupe.
+        // (AXUIElement se compare avec CFEqual ; si l'app recrée son champ entre deux dictées,
+        // on retombe simplement sur un nouveau groupe — dégradation sans casse.)
+        if let last = Self.lastElement, let lastID = Self.lastFieldID, CFEqual(last, el) {
+            fieldID = lastID
+        } else {
+            fieldID = UUID()
+        }
+        Self.lastElement = el
+        Self.lastFieldID = fieldID
         var r: CFTypeRef?
         if AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &r) == .success,
            let rv = r, CFGetTypeID(rv) == AXValueGetTypeID() {

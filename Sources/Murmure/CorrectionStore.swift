@@ -7,6 +7,14 @@ struct TranscriptEntry: Codable {
     let date: Date
     let inserted: String       // ce que Murmure a collé (après correction légère)
     var corrected: String?     // ce que l'utilisateur a finalement gardé
+    /// Champ physique où le texte a été collé : les dictées qui partagent ce `fieldID` sont
+    /// allées dans le MÊME input, donc l'historique les regroupe. nil = cible inconnue.
+    var fieldID: UUID?
+    /// App propriétaire du champ (entête du groupe).
+    var appName: String?
+
+    /// Le texte à retenir : la correction de l'utilisateur si elle existe, sinon ce qui a été collé.
+    var text: String { corrected ?? inserted }
 }
 
 /// Un mot candidat au vocabulaire, EN ATTENTE de validation par l'utilisateur.
@@ -53,8 +61,9 @@ final class CorrectionStore: ObservableObject {
     // MARK: - Écriture
 
     @discardableResult
-    func addTranscript(_ inserted: String) -> UUID {
-        let entry = TranscriptEntry(id: UUID(), date: Date(), inserted: inserted, corrected: nil)
+    func addTranscript(_ inserted: String, fieldID: UUID? = nil, appName: String? = nil) -> UUID {
+        let entry = TranscriptEntry(id: UUID(), date: Date(), inserted: inserted, corrected: nil,
+                                    fieldID: fieldID, appName: appName)
         transcripts.append(entry)
         if transcripts.count > maxHistory { transcripts.removeFirst(transcripts.count - maxHistory) }
         save()

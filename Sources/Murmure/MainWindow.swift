@@ -440,6 +440,21 @@ struct HistoriqueView: View {
 
     private var entries: [TranscriptEntry] { store.recent(limit: 120) }
 
+    /// Regroupe les dictées consécutives parties dans le MÊME champ : dans l'input elles ne
+    /// forment qu'un seul texte, donc on les présente ensemble (et on peut tout copier d'un coup).
+    private var groups: [TranscriptGroup] {
+        var out: [TranscriptGroup] = []
+        for e in entries {  // `recent` renvoie du plus récent au plus ancien
+            if let fid = e.fieldID, let last = out.last, last.id == fid {
+                // Plus ancien → devant, pour lire le groupe dans l'ordre où le champ s'est rempli.
+                out[out.count - 1].entries.insert(e, at: 0)
+            } else {
+                out.append(TranscriptGroup(id: e.fieldID ?? e.id, appName: e.appName, entries: [e]))
+            }
+        }
+        return out
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -462,19 +477,71 @@ struct HistoriqueView: View {
                     Text(L.tr("No dictation yet.", "Aucune dictée pour l'instant."))
                         .foregroundStyle(.secondary)
                 } else {
-                    VStack(spacing: 0) {
-                        ForEach(entries, id: \.id) { entry in
-                            TranscriptRow(entry: entry)
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                            if entry.id != entries.last?.id { Divider().padding(.leading, 16) }
-                        }
+                    VStack(spacing: 14) {
+                        ForEach(groups) { group in TranscriptGroupCard(group: group) }
                     }
-                    .background(.background, in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary, lineWidth: 0.5))
                 }
             }
             .padding(24)
         }
         .navigationTitle(L.tr("History", "Historique"))
+    }
+}
+
+/// Des dictées qui ont atterri dans le même input physique — un seul texte, côté champ.
+struct TranscriptGroup: Identifiable {
+    let id: UUID              // le fieldID du champ (ou l'id de la dictée si cible inconnue)
+    let appName: String?
+    var entries: [TranscriptEntry]   // ordre CHRONOLOGIQUE, comme le champ s'est rempli
+
+    /// Le contenu complet du champ : les dictées bout à bout, dans l'ordre.
+    var joinedText: String {
+        entries.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Une carte d'historique : un groupe (avec « Tout copier ») ou une dictée isolée.
+struct TranscriptGroupCard: View {
+    let group: TranscriptGroup
+    @State private var copiedAll = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if group.entries.count > 1 {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.append").font(.caption2).foregroundStyle(Color.accentColor)
+                    Text(group.appName ?? L.tr("Same field", "Même champ"))
+                        .font(.caption).fontWeight(.medium)
+                    Text("· " + L.tr("\(group.entries.count) dictations", "\(group.entries.count) dictées"))
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: copyAll) {
+                        Label(copiedAll ? L.tr("Copied", "Copié") : L.tr("Copy all", "Tout copier"),
+                              systemImage: copiedAll ? "checkmark" : "doc.on.doc.fill")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(copiedAll ? Color.green : Color.accentColor)
+                    .help(L.tr("Copy the whole text of this field",
+                               "Copier tout le texte de ce champ, d'un seul coup"))
+                }
+                .padding(.horizontal, 16).padding(.top, 11).padding(.bottom, 7)
+                Divider().padding(.leading, 16)
+            }
+            ForEach(group.entries, id: \.id) { entry in
+                TranscriptRow(entry: entry)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                if entry.id != group.entries.last?.id { Divider().padding(.leading, 16) }
+            }
+        }
+        .background(.background, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary, lineWidth: 0.5))
+    }
+
+    private func copyAll() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(group.joinedText, forType: .string)
+        copiedAll = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { copiedAll = false }
     }
 }

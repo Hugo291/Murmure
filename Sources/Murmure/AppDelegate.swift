@@ -597,7 +597,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func performPaste(_ job: DictationJob, _ text: String, done: @escaping () -> Void) {
-        let id = CorrectionStore.shared.addTranscript(text)
+        let id = CorrectionStore.shared.addTranscript(text,
+                                                      fieldID: job.target.fieldID,
+                                                      appName: job.target.appName)
 
         guard Permissions.accessibilityGranted else {
             // Pas d'accessibilité → on ne peut pas coller : presse-papiers + invite.
