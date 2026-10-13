@@ -207,13 +207,6 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section(L.tr("Transcription", "Transcription")) {
-                Picker(selection: $whisperModel) {
-                    ForEach(model.whisperModels, id: \.self) { f in
-                        Text(Config.whisperLabel(f)).tag(f)
-                    }
-                } label: {
-                    Label { Text(L.tr("Transcription model", "Modèle de transcription")) } icon: { IconBadge(symbol: "waveform", color: .blue) }
-                }
                 Picker(selection: $dictationLang) {
                     Text(L.tr("French", "Français")).tag("fr")
                     Text(L.tr("English", "Anglais")).tag("en")
@@ -223,21 +216,16 @@ struct SettingsView: View {
                 }
             }
 
-            let installedWhisper = Set(model.whisperModels)
-            let hasLarge = installedWhisper.contains { $0.contains("large") }
-            // Cache un modèle déjà installé, ET la variante "large" superflue si on a déjà un large
-            // (large-v3-turbo vs large-v3 : inutile de proposer l'autre, ça prête à confusion).
-            let toGet = Config.whisperCatalog.filter { item in
-                !installedWhisper.contains(item.file) && !(hasLarge && item.file.contains("large"))
-            }
-            if !toGet.isEmpty {
-                Section(L.tr("Download a transcription model", "Télécharger un modèle de transcription")) {
-                    ForEach(toGet, id: \.file) { item in
-                        downloadRow(title: "\(item.name)  ·  \(item.size)", id: "whisper:" + item.file) {
-                            model.downloadWhisper(item)
-                        }
-                    }
-                }
+            // UNE seule liste : chaque modèle affiche son état réel (utilisé / installé / à télécharger),
+            // pour qu'on voie d'un coup d'œil ce qu'on a déjà et lequel sert vraiment à transcrire.
+            Section {
+                ForEach(whisperRows, id: \.file) { row in whisperRow(row) }
+            } header: {
+                Text(L.tr("Transcription model", "Modèle de transcription"))
+            } footer: {
+                Text(L.tr("Ranked best to worst for dictation. Downloaded from Hugging Face (ggerganov/whisper.cpp).",
+                          "Classés du meilleur au moins bon pour la dictée. Téléchargés depuis Hugging Face (ggerganov/whisper.cpp)."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section(L.tr("AI", "IA")) {
@@ -352,6 +340,64 @@ struct SettingsView: View {
         .navigationTitle(L.tr("Settings", "Réglages"))
         .frame(minWidth: 480, minHeight: 420)
         .task { model.scan() }
+    }
+
+    // MARK: - Modèles de transcription (installés + téléchargeables, dans une seule liste)
+
+    /// Une ligne de la liste des modèles : le catalogue PLUS les fichiers ggml déjà sur le disque.
+    private struct WhisperRow {
+        let file: String
+        let name: String
+        let size: String?    // nil pour un fichier posé à la main (taille inconnue du catalogue)
+        let installed: Bool
+        let rank: Int        // classement du catalogue (0 = meilleur)
+    }
+
+    /// Les modèles installés d'abord (celui en service en tête), puis ceux à télécharger.
+    private var whisperRows: [WhisperRow] {
+        let installed = Set(model.whisperModels)
+        var rows: [WhisperRow] = Config.whisperCatalog.enumerated().map { i, item in
+            WhisperRow(file: item.file, name: item.name, size: item.size,
+                       installed: installed.contains(item.file), rank: i)
+        }
+        // Fichiers ggml déposés à la main dans le dossier support : listés aussi, pour pouvoir les choisir.
+        let known = Set(Config.whisperCatalog.map(\.file))
+        rows += installed.subtracting(known).sorted().map {
+            WhisperRow(file: $0, name: Config.whisperLabel($0), size: nil,
+                       installed: true, rank: Config.whisperCatalog.count)
+        }
+        // Clé de tri explicite (le tri de Swift n'est pas garanti stable) : en service, puis installés, puis catalogue.
+        func key(_ r: WhisperRow) -> (Int, Int, Int) {
+            (r.installed && r.file == whisperModel ? 0 : 1, r.installed ? 0 : 1, r.rank)
+        }
+        return rows.sorted { key($0) < key($1) }
+    }
+
+    private func whisperRow(_ row: WhisperRow) -> some View {
+        let id = "whisper:" + row.file
+        let inUse = row.installed && row.file == whisperModel
+        return HStack(spacing: 10) {
+            IconBadge(symbol: "waveform", color: inUse ? .blue : (row.installed ? .teal : .gray))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.rank < Config.whisperCatalog.count ? "#\(row.rank + 1)  \(row.name)" : row.name)
+                if let size = row.size, let item = Config.whisperCatalog.first(where: { $0.file == row.file }) {
+                    Text("\(size) · \(L.tr(item.noteEN, item.noteFR))").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if model.downloading.contains(id), row.file == Config.parakeetID {
+                ProgressView().controlSize(.small)   // FluidAudio ne remonte pas de progression
+            } else if model.downloading.contains(id) {
+                ProgressView(value: model.downloadPct[id] ?? 0).frame(width: 90)
+            } else if inUse {
+                Label(L.tr("In use", "Utilisé"), systemImage: "checkmark.circle.fill")
+                    .font(.callout).foregroundStyle(.green)
+            } else if row.installed {
+                Button(L.tr("Use", "Utiliser")) { whisperModel = row.file }
+            } else if let item = Config.whisperCatalog.first(where: { $0.file == row.file }) {
+                Button(L.tr("Download", "Télécharger")) { model.downloadWhisper(item) }
+            }
+        }
     }
 
     private func downloadRow(title: String, id: String, action: @escaping () -> Void) -> some View {

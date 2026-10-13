@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Si le modèle whisper configuré n'existe pas mais qu'un autre est installé, on s'aligne dessus.
         let installed = Config.installedWhisperModels()
         if !installed.contains(Config.whisperModel), let first = installed.first { Config.whisperModel = first }
+        if Config.whisperModel == Config.parakeetID { Parakeet.preload() }
 
         rebuildMenu()
 
@@ -411,8 +412,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func mark(_ ok: Bool) -> String { ok ? "✓" : "✗" }
 
     private func statusLine() -> String {
-        if Config.whisperBinary() == nil { return L.tr("⚠︎ whisper-cli missing", "⚠︎ whisper-cli manquant") }
-        if !FileManager.default.fileExists(atPath: Config.modelPath.path) {
+        if Config.whisperModel != Config.parakeetID, Config.whisperBinary() == nil {
+            return L.tr("⚠︎ whisper-cli missing", "⚠︎ whisper-cli manquant")
+        }
+        if !Config.installedWhisperModels().contains(Config.whisperModel) {
             return Config.installedWhisperModels().isEmpty
                 ? L.tr("⚠︎ no transcription model", "⚠︎ aucun modèle de transcription")
                 : L.tr("⚠︎ pick a transcription model", "⚠︎ choisis un modèle de transcription")

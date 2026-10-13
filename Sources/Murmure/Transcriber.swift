@@ -17,6 +17,13 @@ enum Transcriber {
 
     /// Bloquant — à appeler sur une file de fond.
     static func transcribe(_ wav: URL, token: CancelToken? = nil) throws -> String {
+        defer { try? FileManager.default.removeItem(at: wav) }
+        if Config.whisperModel == Config.parakeetID {
+            guard Parakeet.isInstalled else { throw TranscribeError.noModel }
+            let text = try Parakeet.transcribe(wav)
+            if token?.cancelled == true { throw TranscribeError.failed("annulé") }
+            return CorrectionStore.shared.applyAliases(clean(text))
+        }
         guard let bin = Config.whisperBinary() else { throw TranscribeError.noBinary }
         guard FileManager.default.fileExists(atPath: Config.modelPath.path) else {
             throw TranscribeError.noModel
@@ -26,6 +33,9 @@ enum Transcriber {
             .appendingPathComponent(wav.deletingPathExtension().lastPathComponent + "-out")
         let outTxt = outBase.appendingPathExtension("txt")
         try? FileManager.default.removeItem(at: outTxt)
+        defer {
+            try? FileManager.default.removeItem(at: outTxt)
+        }
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
@@ -64,8 +74,6 @@ enum Transcriber {
         }
 
         let text = (try? String(contentsOf: outTxt, encoding: .utf8)) ?? ""
-        try? FileManager.default.removeItem(at: outTxt)
-        try? FileManager.default.removeItem(at: wav)
         // Substitutions GARANTIES (ex. « cloud design » → « Claude Design ») sur le texte brut,
         // avant le nettoyage IA — le glossaire ne fait que biaiser, l'alias impose.
         return CorrectionStore.shared.applyAliases(clean(text))

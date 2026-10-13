@@ -42,6 +42,14 @@ final class ModelDownloader: NSObject {
         dispatchPrecondition(condition: .onQueue(.main))
         let id = "whisper:" + file
         guard begin(id) else { return }
+        if file == Config.parakeetID {   // FluidAudio télécharge lui-même ses fichiers Core ML (sans progression)
+            progress(nil, label)
+            Task {
+                let ok = (try? await Parakeet.download()) != nil
+                DispatchQueue.main.async { self.end(id); done(ok) }
+            }
+            return
+        }
         guard let u = URL(string: url) else { end(id); done(false); return }
         let dest = Config.supportDir.appendingPathComponent(file)
         let task = session.downloadTask(with: u)

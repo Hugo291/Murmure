@@ -146,25 +146,30 @@ enum Config {
     /// Fichier du modèle whisper utilisé pour la transcription (dans supportDir).
     static var whisperModel: String {
         get { d.string(forKey: "whisperModel") ?? "ggml-large-v3-turbo.bin" }
-        set { d.set(newValue, forKey: "whisperModel") }
+        set { d.set(newValue, forKey: "whisperModel"); if newValue == parakeetID { Parakeet.preload() } }
     }
+
+    /// Identifiant de Parakeet dans `whisperModel` (pas un fichier ggml : moteur FluidAudio, cf. Parakeet.swift).
+    static let parakeetID = "parakeet-tdt-0.6b-v3"
 
     static var modelPath: URL {
         supportDir.appendingPathComponent(whisperModel)
     }
 
-    /// Modèles whisper INSTALLÉS (fichiers `ggml-*.bin` du dossier support). Jamais de téléchargement.
+    /// Modèles INSTALLÉS : fichiers `ggml-*.bin` du dossier support, plus Parakeet s'il est présent.
     static func installedWhisperModels() -> [String] {
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: supportDir.path) else { return [] }
         return files.filter { $0.hasPrefix("ggml-") && $0.hasSuffix(".bin") }.sorted()
+            + (Parakeet.isInstalled ? [parakeetID] : [])
     }
 
     /// Libellé lisible d'un fichier modèle whisper : `ggml-large-v3-turbo.bin` → `large-v3-turbo`.
     static func whisperLabel(_ file: String) -> String {
+        if file == parakeetID { return "Parakeet v3 (NVIDIA)" }
         var s = file
         if s.hasPrefix("ggml-") { s.removeFirst(5) }
         if s.hasSuffix(".bin") { s.removeLast(4) }
-        return s
+        return "Whisper " + s
     }
 
     /// Cherche le binaire whisper-cli là où Homebrew/whisper.cpp l'installe.
@@ -203,17 +208,43 @@ enum Config {
     struct WhisperCatalogItem: Equatable {
         let name: String   // libellé court, ex. "small"
         let file: String   // fichier ggml, ex. "ggml-small.bin"
-        let size: String   // taille approx. affichée, ex. "487 MB"
+        let size: String   // taille réelle sur Hugging Face, ex. "488 MB"
+        let noteEN: String // pourquoi le choisir (affiché sous le nom)
+        let noteFR: String
     }
 
-    /// Modèles whisper proposés au téléchargement (du plus léger au plus précis).
+    /// Modèles whisper proposés, CLASSÉS du meilleur au moins bon pour la dictée (multilingue, FR) :
+    /// précision d'abord, vitesse ensuite à précision voisine. Les `.en` sont exclus (anglais seul) ;
+    /// les variantes q5/q8 d'un modèle dominé par un autre plus léger aussi.
     static let whisperCatalog: [WhisperCatalogItem] = [
-        .init(name: "tiny",           file: "ggml-tiny.bin",           size: "77 MB"),
-        .init(name: "base",           file: "ggml-base.bin",           size: "147 MB"),
-        .init(name: "small",          file: "ggml-small.bin",          size: "487 MB"),
-        .init(name: "medium",         file: "ggml-medium.bin",         size: "1.5 GB"),
-        .init(name: "large-v3-turbo", file: "ggml-large-v3-turbo.bin", size: "1.6 GB"),
-        .init(name: "large-v3",       file: "ggml-large-v3.bin",       size: "3.1 GB"),
+        .init(name: "Parakeet v3 (NVIDIA)", file: parakeetID, size: "470 MB",
+              noteEN: "Fastest · Neural Engine, stays loaded · ignores the dictionary",
+              noteFR: "Le plus rapide · Neural Engine, reste chargé · ignore le dictionnaire"),
+        .init(name: "Whisper large-v3-turbo", file: "ggml-large-v3-turbo.bin", size: "1.6 GB",
+              noteEN: "Recommended · near large-v3 accuracy, ~6× faster",
+              noteFR: "Recommandé · presque aussi précis que large-v3, ~6× plus rapide"),
+        .init(name: "Whisper large-v3", file: "ggml-large-v3.bin", size: "3.1 GB",
+              noteEN: "Most accurate · slow, lots of RAM",
+              noteFR: "Le plus précis · lent, gourmand en mémoire"),
+        .init(name: "Whisper large-v3-turbo (q8)", file: "ggml-large-v3-turbo-q8_0.bin", size: "874 MB",
+              noteEN: "Turbo compressed · same quality, half the size",
+              noteFR: "Turbo compressé · même qualité, moitié moins lourd"),
+        .init(name: "Whisper large-v2", file: "ggml-large-v2.bin", size: "3.1 GB",
+              noteEN: "Previous large · sometimes fewer hallucinations",
+              noteFR: "Ancien large · parfois moins d'hallucinations"),
+        .init(name: "Whisper large-v3-turbo (q5)", file: "ggml-large-v3-turbo-q5_0.bin", size: "574 MB",
+              noteEN: "Turbo compressed more · slight accuracy loss",
+              noteFR: "Turbo très compressé · léger recul de précision"),
+        .init(name: "Whisper medium", file: "ggml-medium.bin", size: "1.5 GB",
+              noteEN: "Decent · slower than turbo for less accuracy",
+              noteFR: "Correct · plus lent que turbo et moins précis"),
+        .init(name: "Whisper small", file: "ggml-small.bin", size: "488 MB",
+              noteEN: "Fast · frequent errors on French",
+              noteFR: "Rapide · erreurs fréquentes en français"),
+        .init(name: "Whisper base", file: "ggml-base.bin", size: "148 MB",
+              noteEN: "Very fast · rough", noteFR: "Très rapide · approximatif"),
+        .init(name: "Whisper tiny", file: "ggml-tiny.bin", size: "78 MB",
+              noteEN: "Testing only", noteFR: "Pour tester seulement"),
     ]
 
     /// URL de téléchargement Hugging Face pour un fichier ggml whisper.cpp.
