@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🎙 Murmure
+<img src="icon/icon-1024.png" width="128" alt="Murmure">
+
+# Murmure
 
 **Local voice dictation for macOS.**
 Press a key, speak, and get clean text right where your cursor is — 100% on your Mac.
