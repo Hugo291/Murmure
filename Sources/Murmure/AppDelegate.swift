@@ -440,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let number = (jobs.map { $0.number }.max() ?? 0) + 1
         let job = DictationJob(number: number)
         job.target.capture() // mémorise où coller AVANT de parler
+        overlay.follow(point: job.target.anchorPointCocoa() ?? NSEvent.mouseLocation) // pile sur l'écran du champ ciblé
 
         guard recorder.start() else {
             play("Basso")

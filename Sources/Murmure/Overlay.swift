@@ -175,8 +175,19 @@ final class OverlayController {
         panel.orderFrontRegardless()
     }
 
+    /// Écran où s'affiche la pile : celui du champ ciblé (pas `NSScreen.main`, qui pour un agent
+    /// sans fenêtre renvoie l'écran principal même quand on dicte sur un second écran).
+    private var screen: NSScreen?
+
+    /// Suit l'écran qui contient `point` (coordonnées Cocoa) ; sans effet si aucun écran ne le contient.
+    func follow(point: CGPoint) {
+        guard let s = NSScreen.screens.first(where: { $0.frame.contains(point) }) else { return }
+        screen = s
+        if panel.isVisible { reposition() }
+    }
+
     private func reposition() {
-        guard let vf = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame else { return }
+        guard let vf = (screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame else { return }
         let s = OverlayController.size
         panel.setFrame(NSRect(x: vf.midX - s.width / 2, y: vf.minY + 22, width: s.width, height: s.height), display: true)
     }
