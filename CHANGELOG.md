@@ -5,6 +5,35 @@ All notable changes to Murmure are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Parakeet v3** (NVIDIA, Core ML via FluidAudio) as a transcription model — about 10× faster than
+  Whisper turbo, slightly less accurate.
+- **Engine priority list** — add AI models by family (Ollama · CPU, Ollama Cloud, Ollama · MLX,
+  LM Studio), drag them into order; the first engine that answers does the cleanup, the others are
+  fallbacks. Per-row state (server off, model missing, in use) and per-engine timing.
+- **Ollama Cloud** engines (opt-in): the dictated text is processed on ollama.com.
+- **GPU busy: MLX engines last** — when another process holds the GPU, CPU engines go first.
+- **Screen context** — reads the conversation shown in the window to restore mis-heard names and
+  stay on topic; never sent to a cloud engine.
+- **History** — dictations grouped by field with "Copy all"; for Claude, the app icon and a cleaned
+  digest of the visible conversation (no model, token, cost or tool-run noise).
+- **Model under the spectrum** (toggle) — transcription model, then the cleanup engine at work.
+- **Skip the AI touch-up** with a lone Shift tap: pastes the raw transcript right away.
+- **Optional audio replay** — keep audio 20 minutes to replay or re-transcribe from History.
+- **Google Cast TVs and speakers** muted while dictating (opt-in per device, via `catt`).
+- French numbers written as digits ("vingt-trois" → 23), deterministic.
+- Restart Murmure from the menu.
+
+### Changed
+
+- New overlay card: centered "phase · timer" line under the spectrum, compact stacked cards, and the
+  stack follows the screen of the target field.
+- LM Studio lists every downloaded language model (loaded or not), not only the loaded ones.
+- The "words to validate" queue lives only in the Dictionary, no longer in History.
+
 ## [1.0.0] — 2026-06-24
 
 First public release. Murmure is a tiny menu-bar app for macOS that turns your

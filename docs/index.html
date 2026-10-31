@@ -50,8 +50,8 @@
     <h1>Murmure</h1>
     <p class="tag">Local voice dictation for macOS. Press a key, speak, and get clean text right where your cursor is — 100% on your Mac.</p>
     <div class="badges">
-      <span class="badge">100% on-device</span>
-      <span class="badge">No account, no cloud</span>
+      <span class="badge">On-device by default</span>
+      <span class="badge">No account</span>
       <span class="badge">macOS 14+</span>
       <span class="badge">MIT licensed</span>
     </div>
@@ -72,18 +72,25 @@
         <img src="img/app-dico.png" alt="Murmure dictionary: validated vocabulary as chips, plus a queue of words to validate with their sentence context">
         <figcaption>Your dictionary holds only words you've validated. New ones queue up with their sentence context — approve or reject each before it's learned. <em>(Example data shown.)</em></figcaption>
       </figure>
+      <figure>
+        <img src="img/app-reglages-ia.png" alt="Murmure settings, AI section: touch-up mode, read-the-screen and GPU toggles, and a numbered, draggable list of touch-up engines with an Add bar per family (Ollama CPU, Ollama Cloud, Ollama MLX, LM Studio)">
+        <figcaption>Pick your AI engines and drag them into order — local CPU, MLX on the GPU, LM Studio, or Ollama Cloud if you opt in. The first one that answers does the cleanup; the others are fallbacks.</figcaption>
+      </figure>
     </div>
   </section>
 
   <section>
     <h2>What it does</h2>
     <div class="grid">
-      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Truly private</h3><p>Transcription (whisper.cpp) and AI cleanup run entirely on your Mac. Nothing is uploaded, ever.</p></div>
-      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h2l2 6 4-14 3 10 2-4h3"/></svg></div><h3>Live feedback</h3><p>Your words appear live above a Spotlight-style spectrum as you talk, then a brain shows the AI cleanup.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Truly private</h3><p>Transcription (whisper.cpp or Parakeet) and AI cleanup run on your Mac. Cloud models are opt-in, and never see your screen.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h2l2 6 4-14 3 10 2-4h3"/></svg></div><h3>Live feedback</h3><p>Your words appear live above the spectrum as you talk, then the phase, a timer and the model at work. Tap Shift to skip the cleanup.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z"/></svg></div><h3>AI cleanup</h3><p>A local LLM removes filler words, stutters and repetitions, and fixes punctuation — keeping your words.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M5 12h14M5 17h10"/><path d="M19 17l2 2-2 2"/></svg></div><h3>You own the dictionary</h3><p>Correct a transcript and Murmure proposes the word — it joins your dictionary only after you validate it.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M7 12h10"/></svg></div><h3>Editable shortcuts</h3><p>Re-bind every shortcut, with conflict warnings. Pastes at the cursor in any app, web included.</p></div>
       <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Dictate in parallel</h3><p>Fire off several dictations at once — they stack up and are delivered in order, so your text never gets scrambled.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></div><h3>Your engines, your order</h3><p>Ollama, MLX, LM Studio or Ollama Cloud: drag them into priority order. If one doesn't answer, the next takes over.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Knows what you're answering</h3><p>Optionally reads the conversation on screen (a Claude chat, say) to restore mis-heard names and stay on topic.</p></div>
+      <div class="feat"><div class="fi"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div><h3>Fast transcription</h3><p>Whisper large-v3-turbo, or Parakeet v3 on the Neural Engine — about ten times faster.</p></div>
     </div>
   </section>
 

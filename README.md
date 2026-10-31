@@ -23,15 +23,20 @@ It's the privacy-respecting, free, open-source take on tools like Wispr Flow or 
 
 ## Why Murmure
 
-- **Truly private** — speech recognition ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) and AI cleanup ([LM Studio](https://lmstudio.ai) / [Ollama](https://ollama.com)) run entirely on your Mac. Nothing ever leaves the machine.
-- **Clean text, not a transcript** — a local LLM removes "um", "uh", stutters and repetitions, fixes punctuation and casing, while keeping *your* words and style.
+- **Truly private** — speech recognition ([whisper.cpp](https://github.com/ggerganov/whisper.cpp) or [Parakeet](https://github.com/FluidInference/FluidAudio)) and AI cleanup ([LM Studio](https://lmstudio.ai) / [Ollama](https://ollama.com)) run entirely on your Mac. Cloud models are strictly opt-in.
+- **Fast transcription** — Whisper `large-v3-turbo` by default, or **Parakeet v3** (NVIDIA, on the Neural Engine) — about 10× faster, slightly less accurate.
+- **Clean text, not a transcript** — an LLM removes "um", "uh", stutters and repetitions, fixes punctuation and casing, while keeping *your* words and style. French numbers are written as digits ("vingt-trois" → 23).
+- **Your engines, your order** — list the AI models you want (Ollama on CPU, MLX on GPU, LM Studio, or **Ollama Cloud**) and drag them into priority order: the first one that answers does the cleanup, the others are fallbacks. When another app keeps the GPU busy, MLX models can step aside automatically.
+- **Reads the conversation you're answering** — optionally, Murmure reads the text shown in the window (e.g. a Claude chat) so the cleanup restores mis-heard names, files and terms, and stays on topic. That screen text never goes to a cloud model.
 - **Pastes anywhere** — native fields, Electron apps, and web inputs (Chrome included).
-- **Live feedback** — a Spotlight-style bar shows a real-time audio spectrum while you speak, then a thinking indicator while it processes.
-- **Live preview** — your words appear in real time above the overlay as you talk (Apple's on-device speech), then vanish; the final pasted text still comes from whisper.
+- **Live feedback** — a compact card shows a real-time audio spectrum while you speak, then the phase (transcription, touch-up) with a timer and, optionally, the model at work. Need the text now? A lone tap on **Shift** skips the AI touch-up and pastes the raw transcript.
+- **Live preview** — your words appear in real time above the overlay as you talk (Apple's on-device speech), then vanish; the final pasted text still comes from the transcription model.
 - **Learns your vocabulary** — correct a transcript and Murmure remembers the term, then reuses it to transcribe better next time.
+- **History** — dictations grouped by the field they went into, with "Copy all"; for dictations into Claude, the app icon and a clean digest of the conversation on screen.
 - **Editable shortcuts** — rebind every command from the menu, with conflict warnings.
-- **Parallel dictations** — fire several at once; they're delivered in the order you started them, so your text never gets scrambled.
-- **Mutes system audio** while recording (like Typeless), and restores it after.
+- **Parallel dictations** — fire several at once; they're delivered in the order you started them, so your text never gets scrambled. The overlay follows the screen of the field you're typing in.
+- **Optional audio replay** — enable “Keep audio for 20 minutes” in Settings to replay or re-transcribe recent dictations from History. Local WAV copies expire automatically (cleanup resumes on launch if the app was closed), with a 50 MB cap that removes the oldest first. Disabled by default; disabling or clearing history deletes saved audio. Reanalysis uses the current transcription model and updates the text directly in History without a popup.
+- **Mutes system audio** while recording (like Typeless), and restores it after — and, if you enable them, your **Google Cast TVs and speakers** too (via [`catt`](https://github.com/skorokithakis/catt)).
 - **English & French** interface, switchable from the menu.
 
 ## Install
@@ -85,6 +90,7 @@ Murmure lives in the menu bar (the 🎙 mic, top-right). On first run, grant thr
 |---|---|
 | **Fn** | Start / stop dictation (tap to start, tap again to transcribe & paste) |
 | **Esc** | Cancel the current recording or processing |
+| **⇧ Shift** (tap alone) | Skip the AI touch-up and paste the raw transcript |
 | **⌘L** | Paste the last dictation again |
 | **⌘R** | Rewrite the selected text (strip filler & repetition, keep the meaning) |
 
@@ -95,25 +101,36 @@ Press **Fn**, talk, press **Fn** again. The text lands at your cursor. That's it
 ## How it works
 
 ```
-  Fn ─► record (AVAudioEngine) ─► whisper.cpp (large-v3-turbo) ─► local LLM (Ollama) ─► paste at cursor
-        live spectrum overlay       on-device transcription        filler/punctuation cleanup
+  Fn ─► record (AVAudioEngine) ─► whisper.cpp / Parakeet ─► AI engines, in your order ─► paste at cursor
+        live spectrum overlay       on-device transcription   filler/punctuation cleanup
 ```
 
-Everything runs locally. The speech model (`large-v3-turbo`, ~1.5 GB) lives in
-`~/Library/Application Support/Murmure/`. AI cleanup prefers **LM Studio** (MLX models —
-the best option on Apple Silicon) and falls back to **Ollama** automatically if LM Studio
-isn't running, so cleanup always works.
+The speech models live in `~/Library/Application Support/Murmure/`. AI cleanup walks your
+**engine list** top to bottom and uses the first engine that answers, so cleanup keeps
+working when a server is off.
+
+![Settings › AI: engine priority](docs/img/app-reglages-ia.png)
 
 Tune all of this from **Settings**:
 - **AI touch-up** — raw text, light cleanup (default), or full rewrite.
-- **AI engine** — pick any model already installed in Ollama or LM Studio (the menu lists them live). If you have none, *Download a model…* fetches Gemma in one click — for Ollama (`ollama pull`) or LM Studio (MLX). *Test current model* benchmarks its response time.
-- **Transcription model** — choose among the whisper models you have, or *Download a model…* to grab another size (tiny → large-v3) from Hugging Face in one click, with a live progress bar.
+- **Touch-up engines** — add models by family: *Ollama · CPU*, *Ollama Cloud*, *Ollama · MLX* and *LM Studio* (every downloaded language model, loaded or not). Drag rows to reorder, right-click to move or remove; each row shows whether its server is off or the model is missing. *Test engines* times each one. No model yet? *Download* fetches Gemma in one click, for Ollama or LM Studio.
+- **Read the screen** — use the visible conversation to fix mis-heard words (local engines only).
+- **GPU busy: MLX engines last** — when another app holds the GPU, CPU engines go first.
+- **Transcription model** — Parakeet v3 or any whisper size (tiny → large-v3), downloaded from Hugging Face in one click with a live progress bar.
+- **Show the model under the spectrum** — transcription model while recording/transcribing, cleanup engine during touch-up.
 - **Dictation language** — French, English, or auto.
 - **Language** — interface language (English by default, French available).
 
+### Ollama Cloud (opt-in)
+
+Models such as `kimi-k3:cloud`, `glm-5.3:cloud` or `gpt-oss:120b-cloud` run on ollama.com through
+your local Ollama server (sign in with `ollama signin`). Add one from *Ollama Cloud* in the engine
+list only if you accept that **the dictated text** is sent to ollama.com. The screen text is never
+sent: dictations that use it skip cloud engines.
+
 ## Privacy
 
-Murmure makes **zero network requests** for its core function. Audio, transcripts and your learned vocabulary stay in `~/Library/Application Support/Murmure/` on your Mac. The real-time live preview uses Apple's speech recognition with `requiresOnDeviceRecognition = true`, so it stays on-device too. The only downloads are the one-time model files (from Hugging Face / Ollama) during install.
+With local engines, Murmure makes **zero network requests** for its core function. Audio, transcripts and your learned vocabulary stay in `~/Library/Application Support/Murmure/` on your Mac. The only exception is an **Ollama Cloud** engine you add yourself: it receives the dictated text (never the screen text). The real-time live preview uses Apple's speech recognition with `requiresOnDeviceRecognition = true`, so it stays on-device too. The only downloads are the one-time model files (from Hugging Face / Ollama) during install.
 
 ## Build from source
 
@@ -131,8 +148,8 @@ Pure Swift / AppKit, built with SwiftPM — no Xcode project required.
 ## Tech
 
 - Swift 6 · AppKit · SwiftUI (settings windows)
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) for on-device transcription
-- [Ollama](https://ollama.com) / [LM Studio](https://lmstudio.ai) for local LLM cleanup
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) and [FluidAudio](https://github.com/FluidInference/FluidAudio) (Parakeet, Core ML) for on-device transcription
+- [Ollama](https://ollama.com) / [LM Studio](https://lmstudio.ai) for LLM cleanup
 - Accelerate / vDSP for the live spectrum and voice-activity gate
 - `CGEventTap` for global shortcuts, the Accessibility API for cursor-position pasting
 
