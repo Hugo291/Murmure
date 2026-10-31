@@ -29,6 +29,7 @@ struct HistoryView: View {
     @ObservedObject private var store = CorrectionStore.shared
     @State private var showingClearVocab = false
     @State private var showingClearHistory = false
+    @State private var showingRejectAll = false
     @State private var newTerm = ""
 
     private var terms: [String] { store.glossaryAlphabetical }
@@ -62,6 +63,18 @@ struct HistoryView: View {
                     .padding(.horizontal, 7).padding(.vertical, 2)
                     .background(Color.orange, in: Capsule())
                 Spacer()
+                Button(L.tr("Reject all", "Tout rejeter")) {
+                    showingRejectAll = true
+                }
+                .controlSize(.small)
+                .tint(.red)
+                .confirmationDialog(L.tr("Reject all pending words?", "Rejeter tous les mots en attente ?"),
+                                    isPresented: $showingRejectAll, titleVisibility: .visible) {
+                    Button(L.tr("Reject all", "Tout rejeter"), role: .destructive) { store.rejectAllPending() }
+                    Button(L.tr("Cancel", "Annuler"), role: .cancel) {}
+                } message: {
+                    Text(L.tr("They will never be suggested again.", "Ils ne seront plus jamais reproposés."))
+                }
                 Button(L.tr("Validate all", "Tout valider")) {
                     store.validateAllPending()
                 }
@@ -215,6 +228,9 @@ struct TranscriptRow: View {
     let entry: TranscriptEntry
     @State private var text: String
     @State private var copied = false
+    @ObservedObject private var audio = AudioReplayStore.shared
+    @State private var analyzing = false
+    @State private var audioError: String?
     @FocusState private var focused: Bool
 
     init(entry: TranscriptEntry) {
@@ -224,6 +240,9 @@ struct TranscriptRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
+            if entry.appBundleID == InsertionTarget.claudeBundleID {
+                claudeHeader
+            }
             HStack(spacing: 6) {
                 Text(entry.date, format: .dateTime.day().month().hour().minute())
                     .font(.caption2)
@@ -234,6 +253,15 @@ struct TranscriptRow: View {
                         .foregroundStyle(.green)
                 }
                 Spacer()
+                if let url = audio.audioURL(entry.audioFile) {
+                    Button(L.tr("Replay", "Réécouter")) {
+                        do { try audio.play(url) } catch { audioError = String(describing: error) }
+                    }.buttonStyle(.borderless)
+                    Button(L.tr("Stop", "Arrêter")) { audio.stopPlayback() }.buttonStyle(.borderless)
+                    Button(analyzing ? L.tr("Analyzing…", "Analyse…") : L.tr("Reanalyze", "Réanalyser")) {
+                        reanalyze(url)
+                    }.buttonStyle(.borderless).disabled(analyzing)
+                }
                 Button {
                     copy()
                 } label: {
@@ -244,10 +272,15 @@ struct TranscriptRow: View {
                 .help(L.tr("Copy this text", "Copier ce texte"))
             }
 
+            if let audioError {
+                Text(audioError).font(.caption).foregroundStyle(.red)
+            }
+
             TextField("", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .focused($focused)
+                .disabled(analyzing)
                 .onChange(of: focused) { _, isFocused in
                     if !isFocused { commit() }
                 }
@@ -266,6 +299,63 @@ struct TranscriptRow: View {
             }
         }
         .padding(.vertical, 4)
+        .onChange(of: entry.text) { _, value in text = value }
+
+    }
+
+    /// Dictée dans Claude : icône de l'app + nom, et la conversation affichée au moment de la dictée.
+    @ViewBuilder private var claudeHeader: some View {
+        HStack(spacing: 6) {
+            if let icon = claudeIcon {
+                Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+            }
+            Text(entry.appName ?? "Claude")
+                .font(.caption).fontWeight(.semibold)
+        }
+        if let conversation = entry.conversation {
+            DisclosureGroup {
+                ScrollView {
+                    Text(ScreenText.clean(conversation)) // nettoie aussi les entrées d'avant le filtre
+                        .font(.caption).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 160)
+            } label: {
+                Text(L.tr("Conversation shown", "Conversation affichée")).font(.caption)
+            }
+        }
+    }
+
+    private var claudeIcon: NSImage? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: InsertionTarget.claudeBundleID)
+            .map { NSWorkspace.shared.icon(forFile: $0.path) }
+    }
+
+    private func reanalyze(_ url: URL) {
+        // Copie de travail : Whisper supprime son entrée, jamais la copie conservée.
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("murmure-replay-\(UUID().uuidString).wav")
+        do { try FileManager.default.copyItem(at: url, to: work) }
+        catch { audioError = String(describing: error); return }
+        audioError = nil
+        analyzing = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            defer { try? FileManager.default.removeItem(at: work) }
+            do {
+                let result = try Transcriber.transcribe(work)
+                DispatchQueue.main.async {
+                    analyzing = false
+                    if CorrectionStore.shared.replaceTranscription(id: entry.id, text: result) {
+                        text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        audioError = L.tr("No transcription to update.", "Aucune transcription à mettre à jour.")
+                    }
+                }
+            } catch {
+                let message = String(describing: error)
+                DispatchQueue.main.async { analyzing = false; audioError = message }
+            }
+        }
     }
 
     private func copy() {

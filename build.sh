@@ -7,8 +7,40 @@ APP="Murmure"
 BUNDLE_ID="com.hugo.murmure"
 DEST="${1:-$HOME/Applications}"   # par défaut ~/Applications
 
+# SDK : depuis le SDK macOS 27, @State est une macro SwiftUI. Son plugin (libSwiftUIMacros.dylib)
+# vient avec Xcode mais PAS avec les Command Line Tools 27 → « plugin for module 'SwiftUIMacros'
+# not found ». Dans ce cas on compile avec le SDK 26.x livré à côté, où @State n'est pas une
+# macro. Sans effet sur l'app : la cible reste macOS 14 (Package.swift). SDKROOT déjà défini → respecté.
+if [ -z "${SDKROOT:-}" ]; then
+  SDK="$(xcrun --show-sdk-path)"
+  BIN_DIR="$(dirname "$(xcrun -f swift)")"
+  HAS_SWIFTUI_MACROS=false
+  # Dossiers de plugins du compilateur : toolchain, puis plateforme (Xcode).
+  for d in "$BIN_DIR/../lib" "$BIN_DIR/../local/lib" \
+           "$SDK/../../../Developer/usr/lib" "$SDK/../../../Developer/usr/local/lib"; do
+    if [ -e "$d/swift/host/plugins/libSwiftUIMacros.dylib" ]; then HAS_SWIFTUI_MACROS=true; fi
+  done
+  if ! $HAS_SWIFTUI_MACROS && [ "$(xcrun --show-sdk-version | cut -d. -f1)" -ge 27 ]; then
+    OLD_SDK="$(ls -d "$(dirname "$SDK")"/MacOSX26.*.sdk 2>/dev/null | sort -V | tail -1 || true)"
+    if [ -n "$OLD_SDK" ]; then
+      export SDKROOT="$OLD_SDK"
+      echo "▸ SDK $(basename "$OLD_SDK") (plugin SwiftUIMacros absent des Command Line Tools)"
+    else
+      echo "⚠︎  Plugin SwiftUIMacros absent et aucun SDK macOS 26.x : la compilation va échouer (installe Xcode)" >&2
+    fi
+  fi
+fi
+
+# SDK imposé (ci-dessus ou par l'appelant) : l'édition de liens passe par clang en --sysroot, dont
+# il ne tire pas la version du SDK. Sans -isysroot, le binaire serait marqué « SDK 14.0 » et macOS
+# lui appliquerait les comportements de compatibilité d'AppKit/SwiftUI au lieu de ceux de son SDK.
+SWIFT_BUILD_FLAGS=()
+if [ -n "${SDKROOT:-}" ]; then
+  SWIFT_BUILD_FLAGS=(-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDKROOT")
+fi
+
 echo "▸ Compilation (release)…"
-swift build -c release
+swift build -c release ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"}
 
 BIN=".build/release/$APP"
 APPDIR="$DEST/$APP.app"

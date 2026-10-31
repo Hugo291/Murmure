@@ -17,10 +17,10 @@ final class VocabToast {
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.level = .statusBar
         panel.hasShadow = false
         panel.ignoresMouseEvents = false // poubelle cliquable
         panel.isFloatingPanel = true
+        panel.level = .statusBar // APRÈS isFloatingPanel (qui remet le niveau à 3, celui de la fenêtre Claude)
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]

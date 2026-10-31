@@ -15,6 +15,12 @@ final class InsertionTarget {
     private(set) var fieldID: UUID?
     /// App qui possède le champ, pour l'entête du groupe dans l'historique.
     private(set) var appName: String?
+    /// Bundle id de l'app propriétaire (ex. `com.anthropic.claudefordesktop`), pour son icône.
+    private(set) var bundleID: String?
+
+    /// Cible = Claude (desktop) : on garde alors la conversation affichée dans l'historique.
+    static let claudeBundleID = "com.anthropic.claudefordesktop"
+    var isClaude: Bool { bundleID == Self.claudeBundleID }
 
     /// Dernier champ capturé, TOUS jobs confondus : chaque dictée a son propre InsertionTarget,
     /// la mémoire du « champ précédent » doit donc être partagée.
@@ -25,7 +31,7 @@ final class InsertionTarget {
 
     /// À appeler au démarrage de l'enregistrement.
     func capture() {
-        element = nil; range = nil; pid = 0; fieldID = nil; appName = nil
+        element = nil; range = nil; pid = 0; fieldID = nil; appName = nil; bundleID = nil
         Self.enableWebAX() // réveille l'accessibilité de Chrome/Chromium (désactivée par défaut)
         guard AXIsProcessTrusted(), let el = focusedElement(), isTextElement(el) else {
             // Aucune cible lisible : on OUBLIE le champ précédent. Sinon une dictée ultérieure
@@ -37,6 +43,7 @@ final class InsertionTarget {
         element = el
         AXUIElementGetPid(el, &pid)
         appName = NSRunningApplication(processIdentifier: pid)?.localizedName
+        bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
         // Même élément AX que la dictée précédente → même input physique → même groupe.
         // (AXUIElement se compare avec CFEqual ; si l'app recrée son champ entre deux dictées,
         // on retombe simplement sur un nouveau groupe — dégradation sans casse.)
@@ -52,6 +59,77 @@ final class InsertionTarget {
            let rv = r, CFGetTypeID(rv) == AXValueGetTypeID() {
             range = (rv as! AXValue)
         }
+    }
+
+    /// Ce qui est DÉJÀ écrit dans le champ, juste avant le point d'insertion — le contexte de la
+    /// dictée en cours (typiquement la dictée précédente). Sert à la retouche IA, pour qu'elle
+    /// enchaîne dans le même sujet, le même style et la même phrase. nil si le champ est illisible
+    /// ou vide : le contexte reste facultatif, la retouche se fait alors comme avant.
+    ///
+    /// À appeler sur le main (API d'accessibilité), au plus tard possible : le champ contient
+    /// alors la dictée précédente, qui a eu le temps d'être collée.
+    func textBeforeCaret(limit: Int = 800) -> String? {
+        guard let element else { return nil }
+        // Une app qui rame ne doit pas figer la dictée : on plafonne l'attente AX.
+        AXUIElementSetMessagingTimeout(element, 1.0)
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &v) == .success,
+              let full = v as? String, !full.isEmpty else { return nil }
+
+        // On ne garde que ce qui PRÉCÈDE le caret actuel : le reste viendra après notre texte.
+        var head = full
+        var r: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &r) == .success,
+           let rv = r, CFGetTypeID(rv) == AXValueGetTypeID() {
+            var caret = CFRange(location: 0, length: 0)
+            let utf16 = Array(full.utf16)   // l'accessibilité indexe en UTF-16
+            if AXValueGetValue((rv as! AXValue), .cfRange, &caret),
+               caret.location >= 0, caret.location <= utf16.count {
+                head = String(decoding: utf16[0..<caret.location], as: UTF16.self)
+            }
+        }
+
+        let t = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return nil }
+        // Un long document ne sert à rien au LLM (et le ralentit) : on garde la fin, la plus proche.
+        return t.count <= limit ? t : "…" + String(t.suffix(limit))
+    }
+
+    /// Ce qui est AFFICHÉ dans la fenêtre du champ (la conversation, le document…), hors le champ
+    /// lui-même : sa fin sert à la retouche IA pour rétablir les mots mal entendus (noms de fichiers,
+    /// d'apps, de fonctions) et pour répondre au bon sujet. Parcours AX borné (nombre de nœuds, profondeur,
+    /// délai par appel) : c'est le main qui le fait, comme `textBeforeCaret`. nil si rien de lisible.
+    func screenText(limit: Int = 1500) -> String? {
+        guard let element else { return nil }
+        var winRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &winRef) == .success,
+              let rw = winRef, CFGetTypeID(rw) == AXUIElementGetTypeID() else { return nil }
+        let window = rw as! AXUIElement
+        AXUIElementSetMessagingTimeout(window, 0.5)
+        var pieces: [String] = []
+        var budget = 1200 // nombre maximal de nœuds visités
+        func walk(_ el: AXUIElement, depth: Int) {
+            guard budget > 0, depth < 40 else { return }
+            budget -= 1
+            if CFEqual(el, element) { return } // le champ : déjà couvert par `textBeforeCaret`
+            var roleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+            if (roleRef as? String) == "AXStaticText" {
+                var v: CFTypeRef?
+                if AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &v) == .success,
+                   let s = v as? String, !s.isEmpty { pieces.append(s) }
+                return
+            }
+            var kids: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &kids) == .success,
+                  let list = kids as? [AXUIElement] else { return }
+            for k in list { walk(k, depth: depth + 1) }
+        }
+        walk(window, depth: 0)
+        let t = ScreenText.clean(pieces.joined(separator: "\n"))
+        guard !t.isEmpty else { return nil }
+        // Seule la fin compte : c'est là que se trouve le dernier message auquel on répond.
+        return t.count <= limit ? t : "…" + String(t.suffix(limit))
     }
 
     /// Rectangle écran du caret mémorisé (coordonnées AX : origine en haut à gauche).

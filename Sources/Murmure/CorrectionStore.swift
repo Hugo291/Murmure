@@ -5,13 +5,18 @@ import Combine
 struct TranscriptEntry: Codable {
     let id: UUID
     let date: Date
-    let inserted: String       // ce que Murmure a collé (après correction légère)
+    var inserted: String       // ce que Murmure a collé (après correction légère)
     var corrected: String?     // ce que l'utilisateur a finalement gardé
     /// Champ physique où le texte a été collé : les dictées qui partagent ce `fieldID` sont
     /// allées dans le MÊME input, donc l'historique les regroupe. nil = cible inconnue.
     var fieldID: UUID?
     /// App propriétaire du champ (entête du groupe).
     var appName: String?
+    var audioFile: String?
+    /// Bundle id de l'app (icône dans l'historique). Ajouté après coup : absent = ancienne entrée.
+    var appBundleID: String? = nil
+    /// Conversation affichée au moment de la dictée, si la cible était Claude. Absent sinon.
+    var conversation: String? = nil
 
     /// Le texte à retenir : la correction de l'utilisateur si elle existe, sinon ce qui a été collé.
     var text: String { corrected ?? inserted }
@@ -61,13 +66,26 @@ final class CorrectionStore: ObservableObject {
     // MARK: - Écriture
 
     @discardableResult
-    func addTranscript(_ inserted: String, fieldID: UUID? = nil, appName: String? = nil) -> UUID {
+    func addTranscript(_ inserted: String, fieldID: UUID? = nil, appName: String? = nil, audioFile: String? = nil,
+                       appBundleID: String? = nil, conversation: String? = nil) -> UUID {
         let entry = TranscriptEntry(id: UUID(), date: Date(), inserted: inserted, corrected: nil,
-                                    fieldID: fieldID, appName: appName)
+                                    fieldID: fieldID, appName: appName, audioFile: audioFile,
+                                    appBundleID: appBundleID, conversation: conversation)
         transcripts.append(entry)
         if transcripts.count > maxHistory { transcripts.removeFirst(transcripts.count - maxHistory) }
         save()
         return entry.id
+    }
+
+    /// Un nouveau résultat du modèle remplace le texte sans apprendre de vocabulaire.
+    @discardableResult
+    func replaceTranscription(id: UUID, text: String) -> Bool {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, let idx = transcripts.firstIndex(where: { $0.id == id }) else { return false }
+        transcripts[idx].inserted = clean
+        transcripts[idx].corrected = nil
+        save()
+        return true
     }
 
     /// Enregistre une correction (détectée auto ou via le panneau) et apprend le vocabulaire.
@@ -148,6 +166,7 @@ final class CorrectionStore: ObservableObject {
 
     /// Efface tout : historique des dictées ET vocabulaire appris.
     func clearAll() {
+        AudioReplayStore.shared.clear()
         transcripts = []
         glossary = [:]
         pending = []
@@ -163,6 +182,7 @@ final class CorrectionStore: ObservableObject {
 
     /// Efface uniquement l'historique des dictées (garde le vocabulaire).
     func clearTranscripts() {
+        AudioReplayStore.shared.clear()
         transcripts = []
         save()
     }

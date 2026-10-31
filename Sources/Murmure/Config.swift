@@ -25,6 +25,20 @@ enum Config {
         set { d.set(newValue.rawValue, forKey: "reformMode") }
     }
 
+    static var retainAudio: Bool {
+        get { d.bool(forKey: "retainAudio") }
+        set {
+            d.set(newValue, forKey: "retainAudio")
+            if !newValue { AudioReplayStore.shared.clear() }
+        }
+    }
+
+    /// IP des appareils Cast dont le son est coupé pendant la dictée. Vide par défaut : on les active dans le menu.
+    static var pausedDevices: [String] {
+        get { d.stringArray(forKey: "pausedDevices") ?? [] }
+        set { d.set(newValue, forKey: "pausedDevices") }
+    }
+
     // MARK: - Prompts système de reformulation (éditables dans les Réglages)
 
     /// Prompts par défaut : source de vérité, servent au repli et au « Réinitialiser ».
@@ -79,24 +93,49 @@ enum Config {
         return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? def : s
     }
 
-    static var ollamaModel: String {
-        get { d.string(forKey: "ollamaModel") ?? "gemma3:4b" }
-        set { d.set(newValue, forKey: "ollamaModel") }
+    /// Moteurs de retouche, du plus prioritaire au moins prioritaire, « moteur|modèle »
+    /// (`lmstudio|…` ou `ollama|…`). Le premier qui répond sert, les suivants sont des replis.
+    /// Réglé par glisser-déposer (Réglages) et par le menu (clic = en tête). Migré depuis les
+    /// anciens réglages GPU/CPU la première fois (ordre : moteur GPU, moteur choisi, puis l'autre).
+    static var engineOrder: [String] {
+        get {
+            if let saved = d.stringArray(forKey: "engineOrder") { return saved }
+            let backend = d.string(forKey: "reformBackend") ?? "lmstudio"
+            let lm = "lmstudio|" + (d.string(forKey: "lmstudioModel") ?? "gemma-4-e4b-it-mlx")
+            let oll = "ollama|" + (d.string(forKey: "ollamaModel") ?? "gemma3:4b")
+            var seen = Set<String>()
+            return ([d.string(forKey: "gpuEngine"), backend == "ollama" ? oll : lm, backend == "ollama" ? lm : oll]
+                .compactMap { $0 }).filter { seen.insert($0).inserted }
+        }
+        set { d.set(newValue, forKey: "engineOrder") }
     }
 
-    /// Moteur de reformulation : "lmstudio" (par défaut — MLX, bien meilleur sur Apple Silicon ;
-    /// repli auto sur Ollama s'il est éteint) ou "ollama".
-    static var reformBackend: String {
-        get { d.string(forKey: "reformBackend") ?? "lmstudio" }
-        set { d.set(newValue, forKey: "reformBackend") }
+    /// Met un moteur en tête (clic dans le menu, Gemma fraîchement téléchargé).
+    static func promoteEngine(_ key: String) {
+        engineOrder = [key] + engineOrder.filter { $0 != key }
     }
 
-    static var lmstudioModel: String {
-        get { d.string(forKey: "lmstudioModel") ?? "gemma-4-e4b-it-mlx" }
-        set { d.set(newValue, forKey: "lmstudioModel") }
+    /// Nom du modèle à l'œuvre sous le spectre : transcription pendant l'enregistrement et la
+    /// transcription, moteur de retouche pendant la retouche.
+    static var showModel: Bool {
+        get { d.object(forKey: "showModel") as? Bool ?? true }
+        set { d.set(newValue, forKey: "showModel") }
+    }
+
+    /// Lire ce qui est affiché dans la fenêtre (la conversation) pour corriger la dictée. Local uniquement.
+    static var screenContext: Bool {
+        get { d.object(forKey: "screenContext") as? Bool ?? true }
+        set { d.set(newValue, forKey: "screenContext") }
     }
 
     static let lmstudioURL = URL(string: "http://localhost:1234/v1/chat/completions")!
+
+    /// Mode auto : si le GPU est occupé par un autre processus, les moteurs MLX passent après
+    /// les autres (cf. GPULoad). Libre → ordre de `engineOrder`.
+    static var gpuAuto: Bool {
+        get { d.object(forKey: "gpuAuto") as? Bool ?? true }
+        set { d.set(newValue, forKey: "gpuAuto") }
+    }
 
     /// Langue passée à whisper ("fr", "en", "auto").
     static var language: String {
@@ -277,6 +316,14 @@ enum Config {
         set { setShortcut("scSummarize", newValue) }
     }
 
+    /// Passer la retouche IA : colle le texte brut de Whisper sans attendre le LLM.
+    /// Par défaut : un appui SEUL sur Maj (tapé puis relâché sans autre touche) — rien à voir
+    /// avec Échap, qui annule : l'ancien ⇧Échap se confondait avec lui.
+    static var scSkipReform: Shortcut {
+        get { shortcut("scSkipReform", Shortcut(keyCode: -1, modifiers: Shortcut.shift)) }
+        set { setShortcut("scSkipReform", newValue) }
+    }
+
     private static func shortcut(_ key: String, _ def: Shortcut) -> Shortcut {
         if let data = d.data(forKey: key), let s = try? JSONDecoder().decode(Shortcut.self, from: data) { return s }
         return def
@@ -285,8 +332,8 @@ enum Config {
         if let data = try? JSONEncoder().encode(s) { d.set(data, forKey: key) }
     }
 
-    /// Remet les quatre raccourcis à leurs valeurs par défaut.
+    /// Remet tous les raccourcis à leurs valeurs par défaut.
     static func resetShortcuts() {
-        ["scDictation", "scCancel", "scPasteLast", "scSummarize"].forEach { d.removeObject(forKey: $0) }
+        ["scDictation", "scCancel", "scPasteLast", "scSummarize", "scSkipReform"].forEach { d.removeObject(forKey: $0) }
     }
 }

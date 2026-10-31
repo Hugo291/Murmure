@@ -10,6 +10,8 @@ final class CommandsWindowController: NSWindowController, NSWindowDelegate {
         let allowsModifierOnly: Bool      // seule la dictée accepte un modificateur seul (Fn)
         let get: () -> Shortcut
         let set: (Shortcut) -> Void
+        /// Accepte un modificateur seul TAPÉ (Maj, ⌥…), enregistré au relâchement.
+        var allowsModifierTap = false
     }
 
     private let specs: [Spec] = [
@@ -21,11 +23,14 @@ final class CommandsWindowController: NSWindowController, NSWindowDelegate {
              get: { Config.scPasteLast }, set: { Config.scPasteLast = $0 }),
         Spec(title: L.tr("Rewrite selected text", "Reformuler le texte sélectionné"), allowsModifierOnly: false,
              get: { Config.scSummarize }, set: { Config.scSummarize = $0 }),
+        Spec(title: L.tr("Skip AI touch-up (paste raw text)", "Passer la retouche IA (texte brut)"), allowsModifierOnly: false,
+             get: { Config.scSkipReform }, set: { Config.scSkipReform = $0 }, allowsModifierTap: true),
     ]
 
-    /// Ordre de priorité de déclenchement dans FnHotkey : dictée > coller > reformuler > annuler.
-    /// Index `specs` → rang (0 = plus prioritaire). En cas de doublon, seul le plus prioritaire agit.
-    private let priorityRank: [Int] = [0, 3, 1, 2]
+    /// Ordre de priorité de déclenchement dans FnHotkey : dictée > coller > reformuler > passer la
+    /// retouche > annuler. Index `specs` → rang (0 = plus prioritaire). En cas de doublon, seul le
+    /// plus prioritaire agit.
+    private let priorityRank: [Int] = [0, 4, 1, 2, 3]
 
     private var setHotkeyRecording: ((Bool) -> Void)?
     private var onChange: (() -> Void)?
@@ -36,9 +41,10 @@ final class CommandsWindowController: NSWindowController, NSWindowDelegate {
     private var currentConflicts: Set<Int> = []
     private var monitor: Any?
     private var recordingIndex: Int?
+    private var pendingModifier: UInt64? // modificateur pressé seul, retenu jusqu'à son relâchement
 
     convenience init(setHotkeyRecording: @escaping (Bool) -> Void, onChange: @escaping () -> Void) {
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 362),
                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.title = L.tr("Commands", "Commandes")
         self.init(window: win)
@@ -164,6 +170,7 @@ final class CommandsWindowController: NSWindowController, NSWindowDelegate {
         let spec = specs[index]
 
         if event.type == .keyDown {
+            pendingModifier = nil // une vraie touche : c'est une combinaison
             if event.keyCode == 53 { stopRecording(restore: true); return } // Échap = annuler
             finishWith(Shortcut(keyCode: Int(event.keyCode), modifiers: comboFlags(event.modifierFlags)), index: index)
             return
@@ -175,6 +182,23 @@ final class CommandsWindowController: NSWindowController, NSWindowDelegate {
             if f.contains(.function), !f.contains(.command), !f.contains(.option),
                !f.contains(.control), !f.contains(.shift) {
                 finishWith(Shortcut(keyCode: -1, modifiers: Shortcut.fn), index: index)
+            }
+        }
+
+        // flagsChanged : modificateur seul TAPÉ (passer la retouche), retenu à l'appui et validé au
+        // relâchement — sinon ⌘ serait enregistré seul avant qu'on ait fini de taper ⌘⇧R.
+        if event.type == .flagsChanged, spec.allowsModifierTap {
+            let all: NSEvent.ModifierFlags = [.command, .option, .control, .shift, .function]
+            let held = event.modifierFlags.intersection(all)
+            let bits: [(NSEvent.ModifierFlags, UInt64)] = [(.function, Shortcut.fn), (.command, Shortcut.cmd),
+                (.option, Shortcut.opt), (.control, Shortcut.ctrl), (.shift, Shortcut.shift)]
+            if let one = bits.first(where: { held == $0.0 }) {
+                pendingModifier = one.1
+            } else if held.isEmpty, let m = pendingModifier {
+                pendingModifier = nil
+                finishWith(Shortcut(keyCode: -1, modifiers: m), index: index)
+            } else {
+                pendingModifier = nil
             }
         }
     }
@@ -216,6 +240,7 @@ final class CommandsWindowController: NSWindowController, NSWindowDelegate {
         if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
         if restore, let i = recordingIndex { updateButton(i) }
         recordingIndex = nil
+        pendingModifier = nil
         setHotkeyRecording?(false)
     }
 

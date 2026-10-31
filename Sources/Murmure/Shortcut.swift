@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// Un raccourci clavier configurable.
-/// `keyCode == -1` ⇒ modificateur seul (ex. Fn) ; sinon `keyCode` est le code virtuel de la touche.
+/// `keyCode == -1` ⇒ modificateur seul (ex. Fn, Maj) ; sinon `keyCode` est le code virtuel de la touche.
 struct Shortcut: Codable, Equatable {
     var keyCode: Int        // code de touche virtuel ; -1 = pas de touche « normale »
     var modifiers: UInt64   // bits CGEventFlags surveillés (cmd / opt / ctrl / shift / fn)
@@ -16,7 +16,7 @@ struct Shortcut: Codable, Equatable {
     /// Vrai si c'est un modificateur seul (pas de touche « normale »), ex. Fn.
     var isModifierOnly: Bool { keyCode < 0 }
 
-    /// Représentation lisible : « ⌘L », « Fn », « Échap », « ⌃⌥A »…
+    /// Représentation lisible : « ⌘L », « Fn », « ⇧ Maj », « Échap », « ⌃⌥A »…
     var display: String {
         var s = ""
         if modifiers & Shortcut.ctrl  != 0 { s += "⌃" }
@@ -24,7 +24,15 @@ struct Shortcut: Codable, Equatable {
         if modifiers & Shortcut.shift != 0 { s += "⇧" }
         if modifiers & Shortcut.cmd   != 0 { s += "⌘" }
         if keyCode < 0 {
-            if modifiers & Shortcut.fn != 0 { s += "Fn" }
+            // Modificateur seul : on nomme la touche, un symbole isolé (« ⇧ ») se lit mal.
+            switch modifiers {
+            case Shortcut.fn:    s += "Fn"
+            case Shortcut.shift: s += L.tr(" Shift", " Maj")
+            case Shortcut.cmd:   s += " Cmd"
+            case Shortcut.opt:   s += " Option"
+            case Shortcut.ctrl:  s += " Ctrl"
+            default: break
+            }
         } else {
             s += Shortcut.keyName(keyCode)
         }

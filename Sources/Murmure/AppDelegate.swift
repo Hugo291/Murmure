@@ -30,6 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ollamaModelList: [String] = []
     private var lmStudioModelList: [String] = []
     private var modelsLoading = false
+    private var devices: [ConnectedDevice] = []
+    private var devicesLoading = false
+    private var deviceCheckTimer: Timer?
+    private var deviceCheckRunning = false
+    private var tvArmed = false // une télé cochée répond : son son sera coupé pendant la dictée
+    private var pendingStart: DictationJob?   // dictée en attente de la coupure du son des appareils
     private var engineTimes: [String: Double] = [:] // "backend|model" → secondes (négatif = indispo)
     private var testingEngines = false
     private var testingKey: String?                  // "backend|model" en cours de test (pour l'indicateur …)
@@ -41,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Cycle de vie
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = AudioReplayStore.shared
         setupStatusItem()
         SystemAudio.shared.recoverIfNeeded() // rétablit le son si un crash l'avait laissé coupé
 
@@ -62,6 +69,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.onCancel = { [weak self] in self?.cancelCurrent() }
         hotkey.onPasteLast = { [weak self] in self?.pasteLast() }
         hotkey.onSummarize = { [weak self] in self?.summarizeSelection() }
+        hotkey.onSkipReform = { [weak self] in self?.skipReform() }
+        // ⇧Échap n'est consommé que si une dictée est en traitement avec la retouche IA active.
+        hotkey.canSkipReform = { [weak self] in
+            guard let self, Config.reformMode != .off else { return false }
+            return !self.processingJobs().isEmpty
+        }
         // Échap est consommé (et n'atteint pas l'app au premier plan) tant qu'une dictée est active
         // OU en cours de collage — sinon un Échap pendant les ~0.7 s de collage fuiterait vers le champ.
         hotkey.isActive = { [weak self] in
@@ -79,6 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Catalogue de modèles : scan initial (re-scanné ensuite à chaque ouverture du menu).
         refreshModels()
+
+        refreshSelectedDevices()
+        let deviceTimer = Timer(timeInterval: TVControl.refreshInterval, repeats: true) { [weak self] _ in
+            self?.refreshSelectedDevices()
+        }
+        RunLoop.main.add(deviceTimer, forMode: .common)
+        deviceCheckTimer = deviceTimer
 
         buildMainMenu()
 
@@ -144,6 +164,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             img?.isTemplate = true
             button.image = img
         }
+        // Petite télé barrée rouge à droite du micro tant qu'une télé cochée sera coupée.
+        if tvArmed, let tv = NSImage(systemSymbolName: "tv.slash", accessibilityDescription: L.tr("TV muted while dictating", "Télé coupée pendant la dictée"))?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [.systemRed]))) {
+            let a = NSTextAttachment()
+            a.image = tv
+            button.attributedTitle = NSAttributedString(attachment: a)
+            button.imagePosition = .imageLeft
+        } else {
+            button.title = ""
+        }
     }
 
     private func rebuildMenu() {
@@ -171,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (L.tr("Cancel (dictation or processing)", "Annuler (dictée ou traitement)"), Config.scCancel.display),
             (L.tr("Paste last dictation", "Coller la dernière dictée"), Config.scPasteLast.display),
             (L.tr("Rewrite selected text", "Reformuler le texte sélectionné"), Config.scSummarize.display),
+            (L.tr("Skip AI touch-up (paste raw text)", "Passer la retouche IA (texte brut)"), Config.scSkipReform.display),
         ]
         for (desc, key) in commands {
             let it = NSMenuItem(title: "\(desc)   —   \(key)", action: nil, keyEquivalent: "")
@@ -199,19 +231,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Moteur de reformulation : modèles INSTALLÉS listés dynamiquement (Ollama + LM Studio).
         let engineMenu = NSMenu()
-        addEngineSection(engineMenu, title: "Ollama", backend: "ollama", models: ollamaModelList)
-        if !ollamaModelList.isEmpty && !lmStudioModelList.isEmpty { engineMenu.addItem(.separator()) }
-        addEngineSection(engineMenu, title: "LM Studio", backend: "lmstudio", models: lmStudioModelList)
-        if ollamaModelList.isEmpty && lmStudioModelList.isEmpty {
-            let none = NSMenuItem(title: modelsLoading ? L.tr("Scanning…", "Recherche…")
-                                                       : L.tr("No local model found", "Aucun modèle trouvé"),
+        let autoItem = NSMenuItem(title: L.tr("Auto: GPU (MLX) if free, else CPU", "Auto : GPU (MLX) si libre, sinon CPU"),
+                                  action: #selector(toggleGPUAuto), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.state = Config.gpuAuto ? .on : .off
+        engineMenu.addItem(autoItem)
+        engineMenu.addItem(.separator())
+        // Ordre de priorité (Config.engineOrder) : le 1er qui répond sert, les autres sont des replis.
+        // Clic sur un moteur → il passe en tête. Réordonnancement par glisser-déposer : Réglages.
+        let known = ollamaModelList.map(Reformulator.ollamaKey) + lmStudioModelList.map { "lmstudio|\($0)" }
+        for (i, key) in Config.engineOrder.enumerated() {
+            guard let engine = Reformulator.Engine(key: key) else { continue }
+            var label = "\(i + 1). " + engine.label
+            if !known.contains(key) { label += L.tr("  (not found)", "  (introuvable)") }
+            if let t = engineTimes[key] {
+                label += t < 0 ? L.tr("  (unavailable)", "  (indispo)") : String(format: "  (%.1f s)", t)
+            } else if testingEngines && testingKey == key {
+                label += "  (…)"
+            }
+            let it = NSMenuItem(title: label, action: #selector(promoteEngine(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = key
+            it.state = i == 0 ? .on : .off
+            engineMenu.addItem(it)
+        }
+        if Config.engineOrder.isEmpty {
+            let none = NSMenuItem(title: L.tr("No engine: add one in Settings", "Aucun moteur : en ajouter dans les Réglages"),
                                   action: nil, keyEquivalent: "")
             none.isEnabled = false
             engineMenu.addItem(none)
         }
         engineMenu.addItem(.separator())
         let testItem = NSMenuItem(title: testingEngines ? L.tr("Testing…", "Test en cours…")
-                                                        : L.tr("Test current model", "Tester le modèle actuel"),
+                                                        : L.tr("Test engines", "Tester les moteurs"),
                                   action: #selector(runEngineTest), keyEquivalent: "")
         testItem.target = self
         testItem.isEnabled = !testingEngines
@@ -356,6 +408,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // -------------------------------
 
         menu.addItem(.separator())
+
+        // ----- Objets connectés (Google Cast) : peut-on les utiliser ? -----
+        let devMenu = NSMenu()
+        if devices.isEmpty {
+            let none = NSMenuItem(title: devicesLoading ? L.tr("Scanning…", "Recherche…")
+                                                        : L.tr("No device found", "Aucun appareil trouvé"),
+                                  action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            devMenu.addItem(none)
+        }
+        for d in devices {
+            let detail: String
+            switch d.state {
+            case .playing(let a): detail = L.tr("playing", "lecture") + (a.isEmpty ? "" : " · \(a)")
+            case .paused(let a):  detail = L.tr("paused", "en pause") + (a.isEmpty ? "" : " · \(a)")
+            case .idle:           detail = L.tr("available", "disponible")
+            case .offline:        detail = L.tr("unreachable", "injoignable")
+            }
+            let it = NSMenuItem(title: "\(d.usable ? "🟢" : "🔴")  \(d.name)   —   \(detail)",
+                                action: #selector(toggleDevicePause(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = d.ip
+            it.state = Config.pausedDevices.contains(d.ip) ? .on : .off // ✓ = son coupé pendant la dictée
+            devMenu.addItem(it)
+        }
+        devMenu.addItem(.separator())
+        addItem(devMenu, L.tr("Refresh", "Actualiser"), #selector(refreshDevicesAction))
+        let usableCount = devices.filter { $0.usable }.count
+        let devRoot = NSMenuItem(title: L.tr("Connected devices", "Objets connectés")
+                                 + (devices.isEmpty ? "" : "   (\(usableCount)/\(devices.count))"),
+                                 action: nil, keyEquivalent: "")
+        devRoot.submenu = devMenu
+        menu.addItem(devRoot)
+
+        menu.addItem(.separator())
+        addItem(menu, L.tr("Restart Murmure", "Redémarrer Murmure"), #selector(restart))
         addItem(menu, L.tr("Quit Murmure", "Quitter Murmure"), #selector(quit))
 
         menu.delegate = self
@@ -369,28 +457,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Ajoute une section de moteur (en-tête + un item par modèle installé) au sous-menu « Moteur IA ».
-    private func addEngineSection(_ menu: NSMenu, title: String, backend: String, models: [String]) {
-        guard !models.isEmpty else { return }
-        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        let selected = backend == "lmstudio" ? Config.lmstudioModel : Config.ollamaModel
-        for model in models {
-            var label = "  " + model
-            let key = "\(backend)|\(model)"
-            if let t = engineTimes[key] {
-                label += t < 0 ? L.tr("  (unavailable)", "  (indispo)") : String(format: "  (%.1f s)", t)
-            } else if testingEngines && testingKey == key {
-                label += "  (…)"
-            }
-            let it = NSMenuItem(title: label, action: #selector(setEngine(_:)), keyEquivalent: "")
-            it.target = self
-            it.representedObject = key
-            it.state = (Config.reformBackend == backend && selected == model) ? .on : .off
-            menu.addItem(it)
-        }
-    }
-
     /// Liste les modèles installés (Ollama + LM Studio) en tâche de fond, puis met le menu à jour.
     private func refreshModels() {
         guard !modelsLoading else { return }
@@ -407,6 +473,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if changed { self.rebuildMenu() } // rebuildMenu se diffère lui-même si le menu est ouvert
             }
         }
+    }
+
+    private func refreshDevices() {
+        guard !devicesLoading else { return }
+        devicesLoading = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let list = ConnectedDevices.refresh()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let changed = list != self.devices
+                self.devices = list
+                self.devicesLoading = false
+                if changed { self.rebuildMenu() } // différé si le menu est ouvert
+            }
+        }
+    }
+
+    @objc private func refreshDevicesAction() { refreshDevices() }
+
+    private func refreshSelectedDevices() {
+        guard !deviceCheckRunning else { return }
+        deviceCheckRunning = true
+        TVControl.refreshAvailability { [weak self] states in
+            guard let self else { return }
+            self.deviceCheckRunning = false
+            self.tvArmed = states.values.contains { $0 != .offline }
+            self.updateIcon()
+            for i in self.devices.indices {
+                if let state = states[self.devices[i].ip] { self.devices[i].state = state }
+            }
+            self.rebuildMenu()
+        }
+    }
+
+    /// Active/désactive la coupure automatique du son d'un appareil pendant la dictée.
+    @objc private func toggleDevicePause(_ sender: NSMenuItem) {
+        guard let ip = sender.representedObject as? String else { return }
+        var list = Config.pausedDevices
+        if let i = list.firstIndex(of: ip) { list.remove(at: i) } else { list.append(ip) }
+        Config.pausedDevices = list
+        refreshSelectedDevices()
+        rebuildMenu()
     }
 
     private func mark(_ ok: Bool) -> String { ok ? "✓" : "✗" }
@@ -434,19 +542,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Pipeline
 
     private func handleToggle() {
-        if let rec = recordingJob { stopRecording(rec) } else { startRecording() }
+        if let rec = recordingJob { stopRecording(rec); return }
+        if let pending = pendingStart { // 2e appui pendant la coupure du son des appareils : on annule le démarrage
+            pendingStart = nil
+            overlay.remove(pending)
+            TVControl.unmute()
+            return
+        }
+        startRecording()
     }
 
     private func startRecording() {
         editWatcher.finalize() // clôt une éventuelle correction de la dictée précédente
-        Reformulator.warmUp()  // précharge le modèle pendant que tu parles
         let number = (jobs.map { $0.number }.max() ?? 0) + 1
         let job = DictationJob(number: number)
         job.target.capture() // mémorise où coller AVANT de parler
+
+        // Appareils connectés activés : on coupe leur son D'ABORD, l'enregistrement démarre ensuite.
+        guard TVControl.needsMute else { TVControl.mute(); beginRecording(job, number: number); return }
+        pendingStart = job
+        overlay.follow(point: job.target.anchorPointCocoa() ?? NSEvent.mouseLocation)
+        overlay.progressNote(job, L.tr("Muting devices…", "Coupure du son des appareils…"))
+        TVControl.mute { [weak self] in
+            guard let self, self.pendingStart === job else { return } // annulé entre-temps
+            self.pendingStart = nil
+            self.overlay.remove(job)
+            self.beginRecording(job, number: number)
+        }
+    }
+
+    private func beginRecording(_ job: DictationJob, number: Int) {
+        Reformulator.warmUp()  // précharge le modèle pendant que tu parles
+        GPULoad.beginWindow()  // mesure la charge du GPU pendant que tu parles (retouche auto GPU/CPU)
         overlay.follow(point: job.target.anchorPointCocoa() ?? NSEvent.mouseLocation) // pile sur l'écran du champ ciblé
 
         guard recorder.start() else {
             play("Basso")
+            TVControl.unmute()
             overlay.notice(job, L.tr("⚠︎ Mic unavailable", "⚠︎ Micro indisponible"), duration: 1.4)
             return
         }
@@ -454,11 +586,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         jobs.append(job)
         ensureTracking()
         play("Tink")
-        overlay.showRecording(job)
-        if Config.liveTranscript { liveTranscriber.start(localeID: speechLocaleID()) } // aperçu temps réel
-
         let pos = markerAnchor(for: job)
         job.anchor = pos
+        overlay.showRecording(job)
+        overlay.setModel(job, Config.whisperLabel(Config.whisperModel)) // reste affiché pendant la transcription
+        if Config.liveTranscript { liveTranscriber.start(localeID: speechLocaleID()) } // aperçu temps réel
+
         job.marker.setNumber(number > 1 ? number : nil)
         job.marker.onDismiss = { [weak self, weak job] in
             guard let job else { return }
@@ -512,8 +645,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopRecording(_ job: DictationJob) {
         SystemAudio.shared.restore()
+        TVControl.unmute() // le son de la télé revient (si c'est nous qui l'avions coupé)
         let wav = recorder.stop()   // retire le tap d'ABORD → plus aucun buffer vers l'aperçu
         liveTranscriber.stop()      // puis on arrête le moteur d'aperçu (fenêtre de course fermée)
+        GPULoad.endWindow()         // AVANT Whisper, qui occupe lui-même le GPU
         overlay.hideLive()          // la bande disparaît à la fin du transcript
         recordingJob = nil
 
@@ -524,9 +659,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshUI()
             return
         }
+        AudioReplayStore.shared.retain(wav)
         job.wav = wav
         play("Pop")
-        overlay.showProcessing(job)              // carte « réfléchit » dans la pile
+        overlay.showProcessing(job, L.tr("transcribing", "transcription"), glyph: .dots) // carte « réfléchit » + compteur
         job.marker.setIcon("brain.head.profile") // pastille → cerveau (traitement LLM)
         refreshUI()
         processJob(job, wav: wav)
@@ -544,7 +680,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     DispatchQueue.main.async { if !token.cancelled { self.finishJob(job, error: L.tr("Nothing was heard.", "Rien n'a été entendu.")) } }
                     return
                 }
-                let final = Reformulator.process(trimmed, mode: Config.reformMode, token: token)
+                // Contexte de la retouche : ce qui est déjà dans le champ (souvent la dictée
+                // précédente). Lu ICI, après la transcription : la dictée d'avant a eu le temps
+                // d'être collée. Lecture AX → sur le main. nil = pas de contexte, comportement d'avant.
+                let mode = Config.reformMode
+                let context: String? = mode == .off ? nil
+                    : DispatchQueue.main.sync { job.target.textBeforeCaret() }
+                // Écran : la conversation affichée, pour rétablir les mots mal entendus (local seulement).
+                let screen: String? = mode == .off || !Config.screenContext ? nil
+                    : DispatchQueue.main.sync { job.target.screenText() }
+                if token.cancelled { return }
+                if mode != .off && !token.reformSkipped {
+                    let hint = ToastCard.KeyHint(key: Config.scSkipReform.display, label: L.tr("raw", "brut"))
+                    DispatchQueue.main.async {
+                        self.overlay.setPhase(job, L.tr("touch-up", "retouche"), glyph: .sparkles, hint: hint)
+                        self.overlay.setModel(job, nil) // le moteur de retouche s'affiche dès qu'il est essayé
+                    }
+                }
+                let final = Reformulator.process(trimmed, mode: mode, context: context, screen: screen, token: token) { m in
+                    DispatchQueue.main.async { if !token.cancelled { self.overlay.setModel(job, m) } }
+                }
                 if token.cancelled { return }
                 DispatchQueue.main.async {
                     guard !token.cancelled else { return }
@@ -601,15 +756,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func performPaste(_ job: DictationJob, _ text: String, done: @escaping () -> Void) {
+        // Cible Claude : on garde la conversation affichée (même réglage que la retouche « lire l'écran »).
+        let conversation = job.target.isClaude && Config.screenContext ? job.target.screenText(limit: 4000) : nil
         let id = CorrectionStore.shared.addTranscript(text,
                                                       fieldID: job.target.fieldID,
-                                                      appName: job.target.appName)
+                                                      appName: job.target.appName,
+                                                      audioFile: job.wav?.lastPathComponent,
+                                                      appBundleID: job.target.bundleID,
+                                                      conversation: conversation)
 
         guard Permissions.accessibilityGranted else {
             // Pas d'accessibilité → on ne peut pas coller : presse-papiers + invite.
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
-            overlay.notice(job, L.tr("Copied — ⌘V to paste", "Copié — ⌘V pour coller"), duration: 1.8)
+            overlay.notice(job, L.tr("Copied — ⌘V to paste", "Copié — ⌘V pour coller"), duration: 1.8, check: true)
             Permissions.promptAccessibility()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { done() }
             return
@@ -626,7 +786,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             TextInserter.insert(text, keepOnClipboard: keepClip)
             // Confirmation à chaque livraison (sur la carte du job).
             self.overlay.notice(job, keepClip ? L.tr("Copied — ⌘V to paste", "Copié — ⌘V pour coller") : L.tr("Pasted", "Collé"),
-                                 duration: keepClip ? 1.8 : 1.1)
+                                 duration: keepClip ? 1.8 : 1.1, check: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 self.editWatcher.startWatching(inserted: text, valueBefore: valueBefore, transcriptID: id)
             }
@@ -655,6 +815,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if job === recordingJob {
             recorder.cancel()
             SystemAudio.shared.restore()
+            TVControl.unmute()
             liveTranscriber.stop()
             overlay.hideLive()
             recordingJob = nil
@@ -673,6 +834,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelCurrent() {
         if let rec = recordingJob { cancelJob(rec); return }
         if let last = jobs.max(by: { $0.number < $1.number }) { cancelJob(last) }
+    }
+
+    /// Dictées en traitement (transcription ou retouche), hors enregistrement et hors texte prêt.
+    private func processingJobs() -> [DictationJob] {
+        jobs.filter { $0 !== recordingJob && $0.readyText == nil && !$0.token.cancelled }
+    }
+
+    /// ⇧Échap → passe la retouche IA des dictées en traitement : la requête LLM est coupée (ou
+    /// ne partira pas, si Whisper tourne encore) et chacune colle son texte brut.
+    private func skipReform() {
+        let targets = processingJobs().filter { !$0.token.reformSkipped }
+        guard !targets.isEmpty else { return }
+        for job in targets {
+            job.token.skipReform()
+            overlay.setPhase(job, L.tr("raw text", "texte brut"), glyph: .text)
+            overlay.setModel(job, nil)
+        }
+        play("Tink")
     }
 
     private func removeJob(_ job: DictationJob) {
@@ -701,13 +880,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             let token = NSObject()
-            self.overlay.showProcessing(token, L.tr("Rewriting…", "Reformulation…"))
+            self.overlay.showProcessing(token, L.tr("rewriting", "reformulation"), glyph: .sparkles)
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = Reformulator.summarize(sel)
+                let result = Reformulator.summarize(sel) { m in
+                    DispatchQueue.main.async { self.overlay.setModel(token, m) }
+                }
                 DispatchQueue.main.async {
                     pb.clearContents(); pb.setString(result, forType: .string)
                     TextInserter.sendPaste()
-                    self.overlay.notice(token, L.tr("Rewritten", "Reformulé"), duration: 1.0)
+                    self.overlay.notice(token, L.tr("Rewritten", "Reformulé"), duration: 1.0, check: true)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         pb.clearContents(); if let saved { pb.setString(saved, forType: .string) }
                     }
@@ -730,29 +911,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func setEngine(_ sender: NSMenuItem) {
-        guard let s = sender.representedObject as? String else { return }
-        let parts = s.split(separator: "|", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { return }
-        Config.reformBackend = parts[0]
-        if parts[0] == "lmstudio" { Config.lmstudioModel = parts[1] } else { Config.ollamaModel = parts[1] }
+    /// Clic sur un moteur du menu → il passe en tête de la priorité.
+    @objc private func promoteEngine(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        Config.promoteEngine(key)
         rebuildMenu()
     }
 
-    /// Mesure le temps de réponse du modèle ACTUELLEMENT sélectionné et l'affiche dans le menu.
+    @objc private func toggleGPUAuto() {
+        Config.gpuAuto.toggle()
+        rebuildMenu()
+    }
+
+
+    /// Mesure le temps de réponse du modèle ACTUELLEMENT sélectionné — des deux en mode auto
+    /// (GPU puis CPU) — et l'affiche dans le menu.
     @objc private func runEngineTest() {
         guard !testingEngines else { return }
         testingEngines = true
-        let backend = Config.reformBackend
-        let model = backend == "lmstudio" ? Config.lmstudioModel : Config.ollamaModel
-        let key = "\(backend)|\(model)"
-        testingKey = key
-        engineTimes[key] = nil
+        let targets: [(key: String, engine: Reformulator.Engine)] = Config.engineOrder.compactMap { key in
+            Reformulator.Engine(key: key).map { (key, $0) }
+        }
+        for t in targets { engineTimes[t.key] = nil }
+        testingKey = targets.first?.key
         rebuildMenu()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let t = Reformulator.benchmark(backend: backend, model: model)
+            for t in targets {
+                DispatchQueue.main.async { self?.testingKey = t.key; self?.rebuildMenu() }
+                let secs = Reformulator.benchmark(t.engine)
+                DispatchQueue.main.async { self?.engineTimes[t.key] = secs ?? -1 }
+            }
             DispatchQueue.main.async {
-                self?.engineTimes[key] = t ?? -1
                 self?.testingEngines = false
                 self?.testingKey = nil
                 self?.rebuildMenu()
@@ -783,7 +972,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 if ok {
                     Config.whisperModel = file
-                    self.overlay.notice(token, "\(item.name) " + L.tr("ready", "prêt"), duration: 1.8)
+                    self.overlay.notice(token, "\(item.name) " + L.tr("ready", "prêt"), duration: 1.8, check: true)
                 } else {
                     self.overlay.notice(token, "⚠︎ " + L.tr("Download failed", "Échec du téléchargement"), duration: 2.2)
                 }
@@ -828,12 +1017,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.ollamaModelList = oll
                 self.lmStudioModelList = lms
-                if backend == "ollama", let g = oll.first(where: { $0.lowercased().contains("gemma") }) {
-                    Config.reformBackend = "ollama"; Config.ollamaModel = g
-                } else if backend == "lmstudio", let g = lms.first(where: { $0.lowercased().contains("gemma") }) {
-                    Config.reformBackend = "lmstudio"; Config.lmstudioModel = g
+                if let key = Reformulator.gemmaKey(backend: backend, ollama: oll, lmStudio: lms) {
+                    Config.promoteEngine(key)
                 }
-                self.overlay.notice(token, "\(name) " + L.tr("ready", "prêt"), duration: 1.8)
+                self.overlay.notice(token, "\(name) " + L.tr("ready", "prêt"), duration: 1.8, check: true)
                 self.rebuildMenu()
             }
         }
@@ -990,6 +1177,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    /// Relance Murmure : un petit shell attend la fin de CE processus, puis rouvre le bundle.
+    @objc private func restart() {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; /usr/bin/open \"$0\"",
+                       Bundle.main.bundlePath]
+        do { try p.run() } catch { NSLog("Murmure: relance impossible: \(error)"); return }
+        quit()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         SystemAudio.shared.restore() // filet de sécurité : ne jamais laisser le son coupé
     }
@@ -1040,6 +1237,7 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
         refreshModels() // re-scanne Ollama/LM Studio ; le résultat s'applique à la fermeture si la liste change
+        refreshDevices() // état des objets connectés
     }
 
     func menuDidClose(_ menu: NSMenu) {

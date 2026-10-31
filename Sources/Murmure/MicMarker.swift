@@ -21,10 +21,10 @@ final class MicMarker {
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.level = .statusBar
         panel.hasShadow = true
         panel.ignoresMouseEvents = false // pastille cliquable
         panel.isFloatingPanel = true
+        panel.level = .statusBar // APRÈS isFloatingPanel (qui remet le niveau à 3, celui de la fenêtre Claude)
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.stationary, .fullScreenAuxiliary] // reste sur le bureau de départ
