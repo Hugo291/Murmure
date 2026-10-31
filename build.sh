@@ -35,9 +35,12 @@ fi
 # SDK imposé (ci-dessus ou par l'appelant) : l'édition de liens passe par clang en --sysroot, dont
 # il ne tire pas la version du SDK. Sans -isysroot, le binaire serait marqué « SDK 14.0 » et macOS
 # lui appliquerait les comportements de compatibilité d'AppKit/SwiftUI au lieu de ceux de son SDK.
-SWIFT_BUILD_FLAGS=()
+# Mode Swift 5 pour TOUTES les cibles, dépendances comprises : FluidAudio 0.9.1 (tools 6.0, donc
+# Swift 6) ne compile pas avec Swift 6.3 (Xcode 26, runner CI) — « sending 'asrManager' risks
+# causing data races ». Swift 6.4 l'accepte. Murmure est déjà en mode 5 (Package.swift).
+SWIFT_BUILD_FLAGS=(-Xswiftc -swift-version -Xswiftc 5)
 if [ -n "${SDKROOT:-}" ]; then
-  SWIFT_BUILD_FLAGS=(-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDKROOT")
+  SWIFT_BUILD_FLAGS+=(-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDKROOT")
 fi
 
 echo "▸ Compilation (release)…"
