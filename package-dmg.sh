@@ -15,7 +15,10 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR" "$STAGE"' EXIT
 
 echo "▸ Construction du bundle (release, signé)…"
-MURMURE_VERSION="$VERSION" ./build.sh "$BUILD_DIR" >/dev/null
+LOG="$STAGE/build.log"
+MURMURE_VERSION="$VERSION" ./build.sh "$BUILD_DIR" >"$LOG" 2>&1 || {
+  grep -E "error:|✗|⚠︎" "$LOG" | head -40 >&2; tail -20 "$LOG" >&2; exit 1; }
+rm -f "$LOG"
 APP="$BUILD_DIR/Murmure.app"
 [ -d "$APP" ] || { echo "✗ build.sh n'a pas produit $APP" >&2; exit 1; }
 
