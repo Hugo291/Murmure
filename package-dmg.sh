@@ -26,7 +26,7 @@ echo "▸ Préparation du contenu du DMG (app + raccourci /Applications)…"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
-echo "▸ Création de $DMG…"
+echo "▸ Création de ${DMG}…"
 rm -f "$DMG"
 hdiutil create -volname "Murmure" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 
