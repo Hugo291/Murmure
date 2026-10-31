@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 APP="Murmure"
 BUNDLE_ID="com.hugo.murmure"
 DEST="${1:-$HOME/Applications}"   # par défaut ~/Applications
+VERSION="${MURMURE_VERSION:-1.1.0}" # passé par package-dmg.sh (version du tag)
 
 # SDK : depuis le SDK macOS 27, @State est une macro SwiftUI. Son plugin (libSwiftUIMacros.dylib)
 # vient avec Xcode mais PAS avec les Command Line Tools 27 → « plugin for module 'SwiftUIMacros'
@@ -68,8 +69,8 @@ cat > "$APPDIR/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>         <string>Murmure</string>
     <key>CFBundleIconFile</key>            <string>Murmure</string>
     <key>CFBundlePackageType</key>         <string>APPL</string>
-    <key>CFBundleShortVersionString</key>  <string>1.0</string>
-    <key>CFBundleVersion</key>             <string>1</string>
+    <key>CFBundleShortVersionString</key>  <string>$VERSION</string>
+    <key>CFBundleVersion</key>             <string>$VERSION</string>
     <key>LSMinimumSystemVersion</key>      <string>14.0</string>
     <key>LSUIElement</key>                 <true/>
     <key>NSMicrophoneUsageDescription</key>

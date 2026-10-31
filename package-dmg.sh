@@ -4,18 +4,18 @@
 # il est donc téléchargeable et installable, MAIS non notarisé par Apple — au 1er lancement
 # macOS demande « Ouvrir quand même » (Réglages › Confidentialité et sécurité). Voir le README.
 #
-#   ./package-dmg.sh [version]   # défaut : 1.0.0
+#   ./package-dmg.sh [version]   # défaut : 1.1.0
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 DMG="Murmure-$VERSION.dmg"
 BUILD_DIR="$(mktemp -d)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR" "$STAGE"' EXIT
 
 echo "▸ Construction du bundle (release, signé)…"
-./build.sh "$BUILD_DIR" >/dev/null
+MURMURE_VERSION="$VERSION" ./build.sh "$BUILD_DIR" >/dev/null
 APP="$BUILD_DIR/Murmure.app"
 [ -d "$APP" ] || { echo "✗ build.sh n'a pas produit $APP" >&2; exit 1; }
 
