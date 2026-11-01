@@ -42,8 +42,11 @@ enum Reformulator {
             """ + system2
         }
         // Écran en tête : la dernière chose que lit le modèle reste « ne rends que le texte traité ».
+        // Version avec écran pour les moteurs locaux ; un moteur Cloud garde son rang mais reçoit
+        // le prompt SANS l'écran (le contenu affiché ne quitte jamais le Mac).
+        var withScreen: String?
         if let screen, !screen.isEmpty {
-            system2 = """
+            withScreen = """
             Pour information, voici ce qui est affiché à l'écran juste avant le champ (ex. la conversation \
             à laquelle on répond ; NE PAS le reprendre, NE PAS y répondre) :
             <<<\(screen)>>>
@@ -55,7 +58,7 @@ enum Reformulator {
             """ + system2
         }
 
-        return NumberWords.convert(run(system: system2, user: trimmed, token: token, localOnly: screen != nil,
+        return NumberWords.convert(run(system: system2, user: trimmed, token: token, localSystem: withScreen,
                                        onEngine: onEngine) ?? text)
     }
 
@@ -143,13 +146,15 @@ enum Reformulator {
         "(« vingt-trois » → 23, « trois » → 3, « zéro sept quarante-neuf » → 07 49, « 2 000 euros »). " +
         "Garde en lettres uniquement les expressions figées (« un peu », « une fois », « premier »)."
 
-    private static func run(system rawSystem: String, user: String, token: CancelToken?, localOnly: Bool = false,
+    /// `localSystem` : prompt réservé aux moteurs locaux (avec le texte de l'écran) ; les moteurs Cloud
+    /// reçoivent toujours `rawSystem`.
+    private static func run(system rawSystem: String, user: String, token: CancelToken?, localSystem: String? = nil,
                             onEngine: ((String) -> Void)? = nil) -> String? {
-        let system = rawSystem + numbersRule
         if token?.reformSkipped == true { return nil } // avant `engines()`, qui peut mesurer 0,3 s
-        for engine in engines() where !(localOnly && engine.isCloud) {
+        for engine in engines() {
             if token?.cancelled == true || token?.reformSkipped == true { return nil }
             onEngine?(engine.model)
+            let system = (engine.isCloud ? rawSystem : localSystem ?? rawSystem) + numbersRule
             if let r = call(engine, system: system, user: user, token: token) {
                 NSLog("Murmure — retouche via %@", engine.label)
                 return r

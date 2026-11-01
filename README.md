@@ -27,7 +27,7 @@ It's the privacy-respecting, free, open-source take on tools like Wispr Flow or 
 - **Fast transcription** — Whisper `large-v3-turbo` by default, or **Parakeet v3** (NVIDIA, on the Neural Engine) — about 10× faster, slightly less accurate.
 - **Clean text, not a transcript** — an LLM removes "um", "uh", stutters and repetitions, fixes punctuation and casing, while keeping *your* words and style. French numbers are written as digits ("vingt-trois" → 23).
 - **Your engines, your order** — list the AI models you want (Ollama on CPU, MLX on GPU, LM Studio, or **Ollama Cloud**) and drag them into priority order: the first one that answers does the cleanup, the others are fallbacks. When another app keeps the GPU busy, MLX models can step aside automatically.
-- **Reads the conversation you're answering** — optionally, Murmure reads the text shown in the window (e.g. a Claude chat) so the cleanup restores mis-heard names, files and terms, and stays on topic. That screen text never goes to a cloud model.
+- **Reads the conversation you're answering** — optionally, Murmure reads the text shown in the window (e.g. a Claude chat) so the cleanup restores mis-heard names, files and terms, and stays on topic. That screen text never goes to a cloud model (cloud engines get the prompt without it).
 - **Pastes anywhere** — native fields, Electron apps, and web inputs (Chrome included).
 - **Live feedback** — a compact card shows a real-time audio spectrum while you speak, then the phase (transcription, touch-up) with a timer and, optionally, the model at work. Need the text now? A lone tap on **Shift** skips the AI touch-up and pastes the raw transcript.
 - **Live preview** — your words appear in real time above the overlay as you talk (Apple's on-device speech), then vanish; the final pasted text still comes from the transcription model.
@@ -126,7 +126,7 @@ Tune all of this from **Settings**:
 Models such as `kimi-k3:cloud`, `glm-5.3:cloud` or `gpt-oss:120b-cloud` run on ollama.com through
 your local Ollama server (sign in with `ollama signin`). Add one from *Ollama Cloud* in the engine
 list only if you accept that **the dictated text** is sent to ollama.com. The screen text is never
-sent: dictations that use it skip cloud engines.
+sent: a cloud engine keeps its place in the list but gets the prompt without it.
 
 ## Privacy
 
